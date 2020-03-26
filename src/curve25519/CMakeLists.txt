@@ -68,6 +68,7 @@ set(ed25519_SRCS
     ed25519/additions/compare.c
     ed25519/additions/curve_sigs.c
     ed25519/additions/elligator.c
+    ed25519/additions/fe_edy_to_montx.c
     ed25519/additions/fe_isequal.c
     ed25519/additions/fe_isreduced.c
     ed25519/additions/fe_mont_rhs.c
