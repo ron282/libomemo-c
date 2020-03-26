@@ -477,6 +477,77 @@ START_TEST(test_unique_signature_vector)
 }
 END_TEST
 
+START_TEST(test_ed25519_verify_from_xed25519_sig)
+{
+    int result;
+
+    ec_key_pair *keys = 0;
+    signal_buffer *pubkey_buffer = 0;
+    ec_public_key *pubkey = 0;
+    signal_buffer *signature = 0;
+
+    result = curve_generate_key_pair(global_context, &keys);
+    ck_assert_int_eq(result, 0);
+
+    pubkey_buffer = ec_public_key_get_ed(ec_key_pair_get_public(keys));
+
+    result = curve_decode_point(&pubkey, pubkey_buffer->data, pubkey_buffer->len, global_context);
+    ck_assert_int_eq(result, 0);
+
+    uint8_t message[1000];
+    memset(message, 42, sizeof(message));
+
+    result = curve_calculate_signature(global_context, &signature, ec_key_pair_get_private(keys), message, sizeof(message));
+    ck_assert_int_eq(result, 0);
+
+    uint8_t *data = signal_buffer_data(signature);
+    size_t len = signal_buffer_len(signature);
+
+    result = curve_verify_signature(pubkey, message, sizeof(message), data, len);
+    ck_assert_int_eq(result, 1);
+
+    SIGNAL_UNREF(pubkey);
+    SIGNAL_UNREF(keys);
+    signal_buffer_free(pubkey_buffer);
+    signal_buffer_free(signature);
+}
+END_TEST
+
+START_TEST(test_curve_to_ed_to_curve)
+{
+    int result;
+
+    ec_private_key *alice_private_key = 0;
+    ec_public_key *alice_public_key = 0;
+    signal_buffer *montpub_buffer = 0;
+    signal_buffer *edpub_buffer = 0;
+    ec_public_key *alice_public_key_2 = 0;
+    signal_buffer *montpub_buffer_2 = 0;
+
+    result = curve_generate_private_key(global_context, &alice_private_key);
+    ck_assert_int_eq(result, 0);
+
+    result = curve_generate_public_key(&alice_public_key, alice_private_key);
+    ck_assert_int_eq(result, 0);
+
+    edpub_buffer = ec_public_key_get_ed(alice_public_key);
+    result = curve_decode_point(&alice_public_key_2, edpub_buffer->data, edpub_buffer->len, global_context);
+    ck_assert_int_eq(result, 0);
+
+    montpub_buffer = ec_public_key_get_mont(alice_public_key);
+    montpub_buffer_2 = ec_public_key_get_mont(alice_public_key_2);
+    result = signal_buffer_compare(montpub_buffer, montpub_buffer_2);
+    ck_assert_int_eq(result, 0);
+
+    SIGNAL_UNREF(alice_private_key);
+    SIGNAL_UNREF(alice_public_key);
+    SIGNAL_UNREF(alice_public_key_2);
+    signal_buffer_free(edpub_buffer);
+    signal_buffer_free(montpub_buffer);
+    signal_buffer_free(montpub_buffer_2);
+}
+END_TEST
+
 Suite *curve25519_suite(void)
 {
     Suite *suite = suite_create("curve25519");
@@ -490,6 +561,8 @@ Suite *curve25519_suite(void)
     tcase_add_test(tcase, test_curve25519_large_signatures);
     tcase_add_test(tcase, test_unique_signatures);
     tcase_add_test(tcase, test_unique_signature_vector);
+    tcase_add_test(tcase, test_curve_to_ed_to_curve);
+    tcase_add_test(tcase, test_ed25519_verify_from_xed25519_sig);
     suite_add_tcase(suite, tcase);
     return suite;
 }
