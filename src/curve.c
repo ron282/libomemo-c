@@ -7,6 +7,7 @@
 
 #include "curve25519/curve25519-donna.h"
 #include "curve25519/ed25519/additions/curve_sigs.h"
+#include "curve25519/ed25519/additions/xeddsa.h"
 #include "curve25519/ed25519/additions/generalized/gen_x.h"
 #include "curve25519/ed25519/tests/internal_fast_tests.h"
 #include "signal_protocol_internal.h"
@@ -570,7 +571,7 @@ int curve_calculate_signature(signal_context *context,
         goto complete;
     }
 
-    result = curve25519_sign(signal_buffer_data(buffer), signing_key->data, message_data, message_len, random_data);
+    result = xed25519_sign(signal_buffer_data(buffer), signing_key->data, message_data, message_len, random_data);
 
 complete:
     if(result < 0) {
