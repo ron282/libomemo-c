@@ -15,6 +15,7 @@ set(protobuf_SRCS
 	LocalStorageProtocol.pb-c.c
 	WhisperTextProtocol.pb-c.c
 	FingerprintProtocol.pb-c.c
+	OMEMO.pb-c.c
 )
 
 set(signal_protocol_SRCS
