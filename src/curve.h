@@ -17,6 +17,8 @@ int curve_internal_fast_tests(int silent);
 int curve_decode_point(ec_public_key **public_key, const uint8_t *key_data, size_t key_len, signal_context *global_context);
 int ec_public_key_compare(const ec_public_key *key1, const ec_public_key *key2);
 int ec_public_key_memcmp(const ec_public_key *key1, const ec_public_key *key2);
+signal_buffer* ec_public_key_get_ed(const ec_public_key *key);
+signal_buffer* ec_public_key_get_mont(const ec_public_key *key);
 
 /**
  * Serialize the public key into a buffer that can be stored.
