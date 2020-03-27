@@ -94,6 +94,56 @@ START_TEST(test_serialize_signal_message)
 }
 END_TEST
 
+START_TEST(test_serialize_signal_message_omemo)
+{
+    int result = 0;
+
+    static const char ciphertext[] = "OMEMOCipherText";
+    ec_public_key *sender_ratchet_key = create_test_ec_public_key(global_context);
+    ec_public_key *sender_identity_key = create_test_ec_public_key(global_context);
+    ec_public_key *receiver_identity_key = create_test_ec_public_key(global_context);
+    uint8_t mac_key[RATCHET_MAC_KEY_LENGTH];
+    memset(mac_key, 1, sizeof(mac_key));
+
+    signal_message *message = 0;
+    signal_message *result_message = 0;
+
+    result = signal_message_create(&message, 4,
+                                   mac_key, sizeof(mac_key),
+                                   sender_ratchet_key,
+                                   2, /* counter */
+                                   1, /* previous counter */
+                                   (uint8_t *)ciphertext, sizeof(ciphertext) - 1,
+                                   sender_identity_key, receiver_identity_key,
+                                   global_context);
+    ck_assert_int_eq(result, 0);
+
+    signal_buffer *serialized = ciphertext_message_get_serialized((ciphertext_message *)message);
+    ck_assert_ptr_ne(serialized, 0);
+
+    result = signal_message_deserialize_omemo(&result_message,
+                                        signal_buffer_data(serialized),
+                                        signal_buffer_len(serialized),
+                                        global_context);
+    ck_assert_int_eq(result, 0);
+
+    compare_signal_messages(message, result_message);
+
+    /* Exercise the MAC verification code */
+    result = signal_message_verify_mac(result_message,
+                                       sender_identity_key, receiver_identity_key,
+                                       mac_key, sizeof(mac_key), global_context);
+    ck_assert_int_eq(result, 1);
+
+    /* Cleanup */
+    SIGNAL_UNREF(message);
+    SIGNAL_UNREF(result_message);
+    SIGNAL_UNREF(sender_ratchet_key);
+    SIGNAL_UNREF(sender_identity_key);
+    SIGNAL_UNREF(receiver_identity_key);
+}
+END_TEST
+
 START_TEST(test_serialize_pre_key_signal_message)
 {
     int result = 0;
@@ -139,6 +189,100 @@ START_TEST(test_serialize_pre_key_signal_message)
             signal_buffer_data(serialized),
             signal_buffer_len(serialized),
             global_context);
+    ck_assert_int_eq(result, 0);
+
+    int version1 = pre_key_signal_message_get_message_version(pre_key_message);
+    int version2 = pre_key_signal_message_get_message_version(result_pre_key_message);
+    ck_assert_int_eq(version1, version2);
+
+    ec_public_key *identity_key1 = pre_key_signal_message_get_identity_key(pre_key_message);
+    ec_public_key *identity_key2 = pre_key_signal_message_get_identity_key(result_pre_key_message);
+    ck_assert_int_eq(ec_public_key_compare(identity_key1, identity_key2), 0);
+
+    int registration_id1 = pre_key_signal_message_get_registration_id(pre_key_message);
+    int registration_id2 = pre_key_signal_message_get_registration_id(result_pre_key_message);
+    ck_assert_int_eq(registration_id1, registration_id2);
+
+    int has_pre_key_id1 = pre_key_signal_message_has_pre_key_id(pre_key_message);
+    int has_pre_key_id2 = pre_key_signal_message_has_pre_key_id(result_pre_key_message);
+    ck_assert_int_eq(has_pre_key_id1, has_pre_key_id2);
+
+    if(has_pre_key_id1) {
+        int pre_key_id1 = pre_key_signal_message_get_pre_key_id(pre_key_message);
+        int pre_key_id2 = pre_key_signal_message_get_pre_key_id(result_pre_key_message);
+        ck_assert_int_eq(pre_key_id1, pre_key_id2);
+    }
+
+    int signed_pre_key_id1 = pre_key_signal_message_get_signed_pre_key_id(pre_key_message);
+    int signed_pre_key_id2 = pre_key_signal_message_get_signed_pre_key_id(result_pre_key_message);
+    ck_assert_int_eq(signed_pre_key_id1, signed_pre_key_id2);
+
+    ec_public_key *base_key1 = pre_key_signal_message_get_base_key(pre_key_message);
+    ec_public_key *base_key2 = pre_key_signal_message_get_base_key(result_pre_key_message);
+    ck_assert_int_eq(ec_public_key_compare(base_key1, base_key2), 0);
+
+    signal_message *message1 = pre_key_signal_message_get_signal_message(pre_key_message);
+    signal_message *message2 = pre_key_signal_message_get_signal_message(result_pre_key_message);
+    compare_signal_messages(message1, message2);
+
+    /* Cleanup */
+    SIGNAL_UNREF(message);
+    SIGNAL_UNREF(result_pre_key_message);
+    SIGNAL_UNREF(pre_key_message);
+    SIGNAL_UNREF(sender_ratchet_key);
+    SIGNAL_UNREF(sender_identity_key);
+    SIGNAL_UNREF(receiver_identity_key);
+    SIGNAL_UNREF(base_key);
+    SIGNAL_UNREF(identity_key);
+}
+END_TEST
+
+START_TEST(test_serialize_pre_key_signal_message_omemo)
+{
+    int result = 0;
+
+    static const char ciphertext[] = "OMEMOCipherText";
+    ec_public_key *sender_ratchet_key = create_test_ec_public_key(global_context);
+    ec_public_key *sender_identity_key = create_test_ec_public_key(global_context);
+    ec_public_key *receiver_identity_key = create_test_ec_public_key(global_context);
+    ec_public_key *base_key = create_test_ec_public_key(global_context);
+    ec_public_key *identity_key = create_test_ec_public_key(global_context);
+    uint8_t mac_key[RATCHET_MAC_KEY_LENGTH];
+    memset(mac_key, 1, sizeof(mac_key));
+
+    signal_message *message = 0;
+    pre_key_signal_message *pre_key_message = 0;
+    pre_key_signal_message *result_pre_key_message = 0;
+
+    result = signal_message_create(&message, 4,
+                                   mac_key, sizeof(mac_key),
+                                   sender_ratchet_key,
+                                   2, /* counter */
+                                   1, /* previous counter */
+                                   (uint8_t *)ciphertext, sizeof(ciphertext) - 1,
+                                   sender_identity_key, receiver_identity_key,
+                                   global_context);
+    ck_assert_int_eq(result, 0);
+
+    uint32_t pre_key_id = 56;
+    result = pre_key_signal_message_create(&pre_key_message,
+                                           4,  /* message version */
+                                           42, /* registration ID */
+                                           &pre_key_id, /* pre key ID */
+                                           72, /* signed pre key ID */
+                                           base_key, identity_key,
+                                           message,
+                                           global_context);
+    ck_assert_int_eq(result, 0);
+
+    signal_buffer *serialized = ciphertext_message_get_serialized((ciphertext_message *)pre_key_message);
+    ck_assert_ptr_ne(serialized, 0);
+
+    result = pre_key_signal_message_deserialize_omemo(&result_pre_key_message,
+                                                signal_buffer_data(serialized),
+                                                signal_buffer_len(serialized),
+                                                42,
+                                                global_context);
     ck_assert_int_eq(result, 0);
 
     int version1 = pre_key_signal_message_get_message_version(pre_key_message);
@@ -296,6 +440,8 @@ Suite *protocol_suite(void)
     tcase_add_checked_fixture(tcase, test_setup, test_teardown);
     tcase_add_test(tcase, test_serialize_signal_message);
     tcase_add_test(tcase, test_serialize_pre_key_signal_message);
+    tcase_add_test(tcase, test_serialize_signal_message_omemo);
+    tcase_add_test(tcase, test_serialize_pre_key_signal_message_omemo);
     tcase_add_test(tcase, test_serialize_sender_key_message);
     tcase_add_test(tcase, test_serialize_sender_key_distribution_message);
     suite_add_tcase(suite, tcase);

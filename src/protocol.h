@@ -37,6 +37,8 @@ int signal_message_create(signal_message **message, uint8_t message_version,
 
 int signal_message_deserialize(signal_message **message, const uint8_t *data, size_t len,
         signal_context *global_context);
+int signal_message_deserialize_omemo(signal_message **message, const uint8_t *data, size_t len,
+        signal_context *global_context);
 
 int signal_message_copy(signal_message **message, signal_message *other_message, signal_context *global_context);
 
@@ -71,6 +73,10 @@ int pre_key_signal_message_create(pre_key_signal_message **pre_key_message,
 
 int pre_key_signal_message_deserialize(pre_key_signal_message **message,
         const uint8_t *data, size_t len,
+        signal_context *global_context);
+int pre_key_signal_message_deserialize_omemo(pre_key_signal_message **message,
+        const uint8_t *data, size_t len,
+        uint32_t registration_id,
         signal_context *global_context);
 
 int pre_key_signal_message_copy(pre_key_signal_message **message, pre_key_signal_message *other_message, signal_context *global_context);

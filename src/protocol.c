@@ -6,6 +6,7 @@
 #include "curve.h"
 #include "signal_protocol_internal.h"
 #include "WhisperTextProtocol.pb-c.h"
+#include "OMEMO.pb-c.h"
 
 #define SIGNAL_MESSAGE_MAC_LENGTH 8
 #define SIGNATURE_LENGTH 64
@@ -26,6 +27,8 @@ struct signal_message
     uint32_t counter;
     uint32_t previous_counter;
     signal_buffer *ciphertext;
+    signal_buffer *authenticated_part;
+    signal_buffer *mac;
 };
 
 struct pre_key_signal_message
@@ -60,6 +63,8 @@ struct sender_key_distribution_message
 };
 
 static int signal_message_serialize(signal_buffer **buffer, const signal_message *message);
+static int signal_message_serialize_omemo(signal_buffer **buffer, const signal_message *message);
+static int signal_message_serialize_omemo_authenticated(signal_buffer **buffer, const signal_message *message);
 static int signal_message_get_mac(signal_buffer **buffer,
         uint8_t message_version,
         ec_public_key *sender_identity_key,
@@ -69,6 +74,7 @@ static int signal_message_get_mac(signal_buffer **buffer,
         signal_context *global_context);
 
 static int pre_key_signal_message_serialize(signal_buffer **buffer, const pre_key_signal_message *message);
+static int pre_key_signal_message_serialize_omemo(signal_buffer **buffer, const pre_key_signal_message *message);
 
 static int sender_key_message_serialize(signal_buffer **buffer, const sender_key_message *message, ec_private_key *signature_key, signal_context *global_context);
 static int sender_key_distribution_message_serialize(signal_buffer **buffer, const sender_key_distribution_message *message);
@@ -98,7 +104,6 @@ int signal_message_create(signal_message **message, uint8_t message_version,
 {
     int result = 0;
     signal_buffer *message_buf = 0;
-    signal_buffer *mac_buf = 0;
     signal_message *result_message = 0;
 
     assert(global_context);
@@ -132,7 +137,7 @@ int signal_message_create(signal_message **message, uint8_t message_version,
         goto complete;
     }
 
-    result = signal_message_get_mac(&mac_buf,
+    result = signal_message_get_mac(&(result_message->mac),
             message_version, sender_identity_key, receiver_identity_key,
             mac_key, mac_key_len,
             signal_buffer_data(message_buf),
@@ -142,23 +147,29 @@ int signal_message_create(signal_message **message, uint8_t message_version,
         goto complete;
     }
 
-    result_message->base_message.serialized = signal_buffer_append(
-            message_buf,
-            signal_buffer_data(mac_buf),
-            signal_buffer_len(mac_buf));
-    if(result_message->base_message.serialized) {
+    if (message_version == 4) {
+        result_message->authenticated_part = message_buf;
         message_buf = 0;
-    }
-    else {
-        result = SG_ERR_NOMEM;
+        signal_message_serialize_omemo_authenticated(&(result_message->base_message.serialized), result_message);
+        if (!result_message->base_message.serialized) {
+            result = SG_ERR_NOMEM;
+        }
+    } else {
+        result_message->base_message.serialized = signal_buffer_append(
+                message_buf,
+                signal_buffer_data(result_message->mac),
+                signal_buffer_len(result_message->mac));
+        if(result_message->base_message.serialized) {
+            message_buf = 0;
+        }
+        else {
+            result = SG_ERR_NOMEM;
+        }
     }
 
 complete:
     if(message_buf) {
         signal_buffer_free(message_buf);
-    }
-    if(mac_buf) {
-        signal_buffer_free(mac_buf);
     }
     if(result >= 0) {
         result = 0;
@@ -174,6 +185,7 @@ complete:
 
 static int signal_message_serialize(signal_buffer **buffer, const signal_message *message)
 {
+    if (message->message_version >= 4) return signal_message_serialize_omemo(buffer, message);
     int result = 0;
     size_t result_size = 0;
     signal_buffer *result_buf = 0;
@@ -222,6 +234,92 @@ complete:
     if(message_structure.ratchetkey.data) {
         free(message_structure.ratchetkey.data);
     }
+    if(result >= 0) {
+        *buffer = result_buf;
+    }
+    return result;
+}
+
+static int signal_message_serialize_omemo(signal_buffer **buffer, const signal_message *message)
+{
+    int result = 0;
+    size_t result_size = 0;
+    signal_buffer *result_buf = 0;
+    Omemo__OMEMOMessage message_structure = OMEMO__OMEMOMESSAGE__INIT;
+    size_t len = 0;
+
+    result = ec_public_key_serialize_protobuf(&message_structure.dh_pub, message->sender_ratchet_key);
+    if(result < 0) {
+        goto complete;
+    }
+
+    message_structure.n = message->counter;
+
+    message_structure.pn = message->previous_counter;
+
+    message_structure.ciphertext.data = signal_buffer_data(message->ciphertext);
+    message_structure.ciphertext.len = signal_buffer_len(message->ciphertext);
+    message_structure.has_ciphertext = 1;
+
+    len = omemo__omemomessage__get_packed_size(&message_structure);
+
+    result_buf = signal_buffer_alloc(len);
+    if(!result_buf) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+
+    result_size = omemo__omemomessage__pack(&message_structure, signal_buffer_data(result_buf));
+    if(result_size != len) {
+        signal_buffer_free(result_buf);
+        result = SG_ERR_INVALID_PROTO_BUF;
+        result_buf = 0;
+        goto complete;
+    }
+
+    complete:
+    if(message_structure.dh_pub.data) {
+        free(message_structure.dh_pub.data);
+    }
+    if(result >= 0) {
+        *buffer = result_buf;
+    }
+    return result;
+}
+
+static int signal_message_serialize_omemo_authenticated(signal_buffer **buffer, const signal_message *message)
+{
+    assert(message->authenticated_part);
+    assert(message->mac);
+    int result = 0;
+    size_t result_size = 0;
+    signal_buffer *result_buf = 0;
+    Omemo__OMEMOAuthenticatedMessage message_structure = OMEMO__OMEMOAUTHENTICATED_MESSAGE__INIT;
+    size_t len = 0;
+
+    message_structure.message.data = signal_buffer_data(message->authenticated_part);
+    message_structure.message.len = signal_buffer_len(message->authenticated_part);
+
+    message_structure.mac.data = signal_buffer_data(message->mac);
+    message_structure.mac.len = signal_buffer_len(message->mac);
+
+    len = omemo__omemoauthenticated_message__get_packed_size(&message_structure);
+
+    result_buf = signal_buffer_alloc(len);
+    if(!result_buf) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+
+    result_size = omemo__omemoauthenticated_message__pack(&message_structure, signal_buffer_data(result_buf));
+    if(result_size != len) {
+        signal_buffer_free(result_buf);
+        result = SG_ERR_INVALID_PROTO_BUF;
+        result_buf = 0;
+        goto complete;
+    }
+
+    complete:
     if(result >= 0) {
         *buffer = result_buf;
     }
@@ -330,6 +428,101 @@ complete:
     return result;
 }
 
+int signal_message_deserialize_omemo(signal_message **message, const uint8_t *data, size_t len, signal_context *global_context)
+{
+    int result = 0;
+    signal_message *result_message = 0;
+    Omemo__OMEMOAuthenticatedMessage *authenticated_message_structure = 0;
+    Omemo__OMEMOMessage *message_structure = 0;
+
+    assert(global_context);
+
+    authenticated_message_structure = omemo__omemoauthenticated_message__unpack(0, len, data);
+
+    if(!authenticated_message_structure) {
+        result = SG_ERR_INVALID_PROTO_BUF;
+        goto complete;
+    }
+
+    message_structure = omemo__omemomessage__unpack(0, authenticated_message_structure->message.len, authenticated_message_structure->message.data);
+
+    if(!message_structure) {
+        result = SG_ERR_INVALID_PROTO_BUF;
+        goto complete;
+    }
+
+    if(!message_structure->has_ciphertext) {
+        signal_log(global_context, SG_LOG_WARNING, "Incomplete message");
+        result = SG_ERR_INVALID_MESSAGE;
+        goto complete;
+    }
+
+    result_message = malloc(sizeof(signal_message));
+    if(!result_message) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+    memset(result_message, 0, sizeof(signal_message));
+    SIGNAL_INIT(result_message, signal_message_destroy);
+
+    result_message->base_message.message_type = CIPHERTEXT_SIGNAL_TYPE;
+    result_message->base_message.global_context = global_context;
+
+    result = curve_decode_point(&result_message->sender_ratchet_key, message_structure->dh_pub.data, message_structure->dh_pub.len, global_context);
+    if(result < 0) {
+        goto complete;
+    }
+
+    result_message->message_version = 4;
+    result_message->counter = message_structure->n;
+    result_message->previous_counter = message_structure->pn;
+
+    result_message->authenticated_part = signal_buffer_alloc(authenticated_message_structure->message.len);
+    if(!result_message->authenticated_part) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+    memcpy(signal_buffer_data(result_message->authenticated_part), authenticated_message_structure->message.data, authenticated_message_structure->message.len);
+
+    result_message->ciphertext = signal_buffer_alloc(message_structure->ciphertext.len);
+    if(!result_message->ciphertext) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+    memcpy(signal_buffer_data(result_message->ciphertext), message_structure->ciphertext.data, message_structure->ciphertext.len);
+
+    result_message->mac = signal_buffer_alloc(authenticated_message_structure->mac.len);
+    if(!result_message->mac) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+    memcpy(signal_buffer_data(result_message->mac), authenticated_message_structure->mac.data, authenticated_message_structure->mac.len);
+
+    result_message->base_message.serialized = signal_buffer_alloc(len);
+    if(!result_message->base_message.serialized) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+    memcpy(signal_buffer_data(result_message->base_message.serialized), data, len);
+
+    complete:
+    if(message_structure) {
+        omemo__omemomessage__free_unpacked(message_structure, 0);
+    }
+    if(authenticated_message_structure) {
+        omemo__omemoauthenticated_message__free_unpacked(authenticated_message_structure, 0);
+    }
+    if(result >= 0) {
+        *message = result_message;
+    }
+    else {
+        if(result_message) {
+            SIGNAL_UNREF(result_message);
+        }
+    }
+    return result;
+}
+
 int signal_message_copy(signal_message **message, signal_message *other_message, signal_context *global_context)
 {
     int result = 0;
@@ -338,11 +531,19 @@ int signal_message_copy(signal_message **message, signal_message *other_message,
     assert(other_message);
     assert(global_context);
 
-    result = signal_message_deserialize(
-            &result_message,
-            signal_buffer_data(other_message->base_message.serialized),
-            signal_buffer_len(other_message->base_message.serialized),
-            global_context);
+    if (other_message->message_version >= 4) {
+        result = signal_message_deserialize_omemo(
+                &result_message,
+                signal_buffer_data(other_message->base_message.serialized),
+                signal_buffer_len(other_message->base_message.serialized),
+                global_context);
+    } else {
+        result = signal_message_deserialize(
+                &result_message,
+                signal_buffer_data(other_message->base_message.serialized),
+                signal_buffer_len(other_message->base_message.serialized),
+                global_context);
+    }
     if(result >= 0) {
         *message = result_message;
     }
@@ -387,19 +588,27 @@ int signal_message_verify_mac(signal_message *message,
     uint8_t *serialized_message_data = 0;
     size_t serialized_message_len = 0;
     uint8_t *their_mac_data = 0;
-    const size_t their_mac_len = SIGNAL_MESSAGE_MAC_LENGTH;
+    size_t their_mac_len = SIGNAL_MESSAGE_MAC_LENGTH;
     uint8_t *our_mac_data = 0;
     size_t our_mac_len = 0;
 
     assert(message);
     assert(message->base_message.serialized);
 
-    /* Set some pointers and lengths for the sections of the raw data */
-    serialized_data = signal_buffer_data(message->base_message.serialized);
-    serialized_len = signal_buffer_len(message->base_message.serialized);
-    serialized_message_data = serialized_data;
-    serialized_message_len = serialized_len - SIGNAL_MESSAGE_MAC_LENGTH;
-    their_mac_data = serialized_data + serialized_message_len;
+    if (message->message_version < 4) {
+        /* Set some pointers and lengths for the sections of the raw data */
+        serialized_data = signal_buffer_data(message->base_message.serialized);
+        serialized_len = signal_buffer_len(message->base_message.serialized);
+        serialized_message_data = serialized_data;
+        serialized_message_len = serialized_len - SIGNAL_MESSAGE_MAC_LENGTH;
+        their_mac_data = serialized_data + serialized_message_len;
+    } else {
+        /* In OMEMO we already decoded the MAC properly */
+        their_mac_data = signal_buffer_data(message->mac);
+        their_mac_len = signal_buffer_len(message->mac);
+        serialized_message_data = signal_buffer_data(message->authenticated_part);
+        serialized_message_len = signal_buffer_len(message->authenticated_part);
+    }
 
     result = signal_message_get_mac(&our_mac_buffer,
             message->message_version,
@@ -533,6 +742,12 @@ void signal_message_destroy(signal_type_base *type)
     if(message->ciphertext) {
         signal_buffer_free(message->ciphertext);
     }
+    if(message->authenticated_part) {
+        signal_buffer_free(message->authenticated_part);
+    }
+    if(message->mac) {
+        signal_buffer_free(message->mac);
+    }
     free(message);
 }
 
@@ -593,6 +808,7 @@ int pre_key_signal_message_create(pre_key_signal_message **pre_key_message,
 
 static int pre_key_signal_message_serialize(signal_buffer **buffer, const pre_key_signal_message *message)
 {
+    if (message->version >= 4) return pre_key_signal_message_serialize_omemo(buffer, message);
     int result = 0;
     size_t result_size = 0;
     signal_buffer *result_buf = 0;
@@ -656,6 +872,61 @@ complete:
     }
     if(message_structure.identitykey.data) {
         free(message_structure.identitykey.data);
+    }
+    if(result >= 0) {
+        *buffer = result_buf;
+    }
+    return result;
+}
+
+static int pre_key_signal_message_serialize_omemo(signal_buffer **buffer, const pre_key_signal_message *message)
+{
+    int result = 0;
+    size_t result_size = 0;
+    signal_buffer *result_buf = 0;
+    Omemo__OMEMOKeyExchange message_structure = OMEMO__OMEMOKEY_EXCHANGE__INIT;
+    signal_buffer *inner_message_buffer = 0;
+    size_t len = 0;
+
+    message_structure.pk_id = message->pre_key_id;
+    message_structure.spk_id = message->signed_pre_key_id;
+
+    result = ec_public_key_serialize_protobuf(&message_structure.ek, message->base_key);
+    if(result < 0) {
+        goto complete;
+    }
+
+    result = ec_public_key_serialize_protobuf(&message_structure.ik, message->identity_key);
+    if(result < 0) {
+        goto complete;
+    }
+
+    inner_message_buffer = message->message->base_message.serialized;
+    message_structure.message.data = signal_buffer_data(inner_message_buffer);
+    message_structure.message.len = signal_buffer_len(inner_message_buffer);
+
+    len = omemo__omemokey_exchange__get_packed_size(&message_structure);
+
+    result_buf = signal_buffer_alloc(len);
+    if(!result_buf) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+
+    result_size = omemo__omemokey_exchange__pack(&message_structure, signal_buffer_data(result_buf));
+    if(result_size != len) {
+        signal_buffer_free(result_buf);
+        result = SG_ERR_INVALID_PROTO_BUF;
+        result_buf = 0;
+        goto complete;
+    }
+
+    complete:
+    if(message_structure.ek.data) {
+        free(message_structure.ek.data);
+    }
+    if(message_structure.ik.data) {
+        free(message_structure.ik.data);
     }
     if(result >= 0) {
         *buffer = result_buf;
@@ -796,6 +1067,89 @@ complete:
     return result;
 }
 
+int pre_key_signal_message_deserialize_omemo(pre_key_signal_message **message,
+                                       const uint8_t *data, size_t len,
+                                       uint32_t registration_id,
+                                       signal_context *global_context)
+{
+    int result = 0;
+    pre_key_signal_message *result_message = 0;
+    Omemo__OMEMOKeyExchange *message_structure = 0;
+    uint8_t *serialized_data = 0;
+
+    assert(global_context);
+
+    message_structure = omemo__omemokey_exchange__unpack(0, len, data);
+    if(!message_structure) {
+        result = SG_ERR_INVALID_PROTO_BUF;
+        goto complete;
+    }
+
+    result_message = malloc(sizeof(pre_key_signal_message));
+    if(!result_message) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+    memset(result_message, 0, sizeof(pre_key_signal_message));
+    SIGNAL_INIT(result_message, pre_key_signal_message_destroy);
+
+    result_message->base_message.message_type = CIPHERTEXT_PREKEY_TYPE;
+    result_message->base_message.global_context = global_context;
+
+    result_message->version = 4;
+    result_message->registration_id = registration_id;
+
+    result_message->pre_key_id = message_structure->pk_id;
+    result_message->has_pre_key_id = 1;
+
+    result_message->signed_pre_key_id = message_structure->spk_id;
+
+    result = curve_decode_point(&result_message->base_key, message_structure->ek.data, message_structure->ek.len, global_context);
+    if(result < 0) {
+        goto complete;
+    }
+
+    result = curve_decode_point(&result_message->identity_key, message_structure->ik.data, message_structure->ik.len, global_context);
+    if(result < 0) {
+        goto complete;
+    }
+
+    result = signal_message_deserialize_omemo(&result_message->message,
+                                        message_structure->message.data,
+                                        message_structure->message.len,
+                                        global_context);
+    if(result < 0) {
+        goto complete;
+    }
+    if(result_message->message->message_version != result_message->version) {
+        signal_log(global_context, SG_LOG_WARNING, "Inner message version mismatch: %d != %d", result_message->message->message_version, result_message->version);
+        result = SG_ERR_INVALID_VERSION;
+        goto complete;
+    }
+
+    result_message->base_message.serialized = signal_buffer_alloc(len);
+    if(!result_message->base_message.serialized) {
+        result = SG_ERR_NOMEM;
+        goto complete;
+    }
+    serialized_data = signal_buffer_data(result_message->base_message.serialized);
+    memcpy(serialized_data, data, len);
+
+    complete:
+    if(message_structure) {
+        omemo__omemokey_exchange__free_unpacked(message_structure, 0);
+    }
+    if(result >= 0) {
+        *message = result_message;
+    }
+    else {
+        if(result_message) {
+            SIGNAL_UNREF(result_message);
+        }
+    }
+    return result;
+}
+
 int pre_key_signal_message_copy(pre_key_signal_message **message, pre_key_signal_message *other_message, signal_context *global_context)
 {
     int result = 0;
@@ -804,11 +1158,20 @@ int pre_key_signal_message_copy(pre_key_signal_message **message, pre_key_signal
     assert(other_message);
     assert(global_context);
 
-    result = pre_key_signal_message_deserialize(
-            &result_message,
-            signal_buffer_data(other_message->base_message.serialized),
-            signal_buffer_len(other_message->base_message.serialized),
-            global_context);
+    if (other_message->version >= 4) {
+        result = pre_key_signal_message_deserialize_omemo(
+                &result_message,
+                signal_buffer_data(other_message->base_message.serialized),
+                signal_buffer_len(other_message->base_message.serialized),
+                other_message->registration_id,
+                global_context);
+    } else {
+        result = pre_key_signal_message_deserialize(
+                &result_message,
+                signal_buffer_data(other_message->base_message.serialized),
+                signal_buffer_len(other_message->base_message.serialized),
+                global_context);
+    }
     if(result >= 0) {
         *message = result_message;
     }
