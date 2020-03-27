@@ -1,9 +1,18 @@
 # Overview
 
-This is a ratcheting forward secrecy protocol that works in synchronous and asynchronous messaging 
-environments. See the [Java library](https://github.com/whispersystems/libsignal-protocol-java) for more details.
+This is a fork of [libsignal-protocol-c](https://github.com/whispersystems/libsignal-protocol-c),
+an implementation of Signal's ratcheting forward secrecy protocol that works in synchronous and
+asynchronous messaging.
+The fork adds support for OMEMO as defined in [XEP-0384](https://xmpp.org/extensions/xep-0384.html)
+versions 0.3.0 and later.
 
-# Building libsignal-protocol-c
+- OMEMO version 0.3.0 uses the original libsignal-protocol-c implementation with its protocol versions 2 and 3.
+- OMEMO version 0.4.0+ is implemented using a new protocol version 4 internally. In comparison with protocol version 3, it changes:
+  - HKDF info strings
+  - Protocol buffer encoding
+  - Signature scheme (uses XEd25519 instead of custom "Curve25519 signatures")
+
+# Building libomemo-c
 
 ## Development host setup
 
@@ -23,7 +32,7 @@ Items marked with *1 are required for tests, with *2 are additionally required f
 
 ### Setting up a fresh source tree
 
-    $ cd /path/to/libsignal-protocol-c
+    $ cd /path/to/libomemo-c
     $ mkdir build
     $ cd build
     $ cmake -DCMAKE_BUILD_TYPE=Debug ..
@@ -31,7 +40,7 @@ Items marked with *1 are required for tests, with *2 are additionally required f
 
 ### Running the unit tests
 
-    $ cd /path/to/libsignal-protocol-c/build
+    $ cd /path/to/libomemo-c/build
     $ cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=1 ..
     $ cd tests
     $ make
@@ -40,12 +49,12 @@ Items marked with *1 are required for tests, with *2 are additionally required f
 
 ### Creating the code coverage report
 
-    $ cd /path/to/libsignal-protocol-c/build
+    $ cd /path/to/libomemo-c/build
     $ cmake -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=1 -DCOVERAGE=1 ..
     $ make coverage
 
 The generated code coverage report can be found in:
-`/path/to/libsignal-protocol-c/build/coverage`
+`/path/to/libomemo-c/build/coverage`
 
 ### Eclipse project setup
 
@@ -71,11 +80,11 @@ CMake toolchain files have been included from the following sources:
 * [iOS](https://code.google.com/archive/p/ios-cmake)
 * [BlackBerry 10](https://github.com/blackberry/OGRE/blob/master/src/CMake/toolchain/blackberry.toolchain.cmake)
 
-# Using libsignal-protocol-c
+# Using libomemo-c
 
 ## Library initialization
 
-Before using the library, a libsignal-protocol-c client needs to initialize a global
+Before using the library, a libomemo-c client needs to initialize a global
 context. This global context is used to provide callbacks for implementations
 of functions used across the library that need client-specific implementations.
 Refer to "signal_protocol.h" for detailed documentation on these functions, and the unit
@@ -90,7 +99,7 @@ signal_context_set_locking_functions(global_context, lock_function, unlock_funct
 
 ## Client install time
 
-At install time, a libsignal-protocol-c client needs to generate its identity keys,
+At install time, a libomemo-c client needs to generate its identity keys,
 registration id, and prekeys.
 
 ```c
@@ -119,7 +128,7 @@ be used as appropriate.
 
 ## Building a session
 
-A libsignal-protocol-c client needs to implement four data store callback interfaces:
+A libomemo-c client needs to implement four data store callback interfaces:
 `signal_protocol_identity_key_store`, `signal_protocol_pre_key_store`,
 `signal_protocol_signed_pre_key_store`, and `signal_protocol_session_store`.
 These will manage loading and storing of identity, prekeys, signed prekeys,
@@ -150,6 +159,7 @@ signal_protocol_address address = {
 };
 session_builder *builder;
 session_builder_create(&builder, store_context, &address, global_context);
+session_builder_set_version(builder, 4);
 
 /* Build a session with a pre key retrieved from the server. */
 session_builder_process_pre_key_bundle(builder, retrieved_pre_key);
@@ -157,6 +167,7 @@ session_builder_process_pre_key_bundle(builder, retrieved_pre_key);
 /* Create the session cipher and encrypt the message */
 session_cipher *cipher;
 session_cipher_create(&cipher, store_context, &address, global_context);
+session_builder_set_version(cipher, 4);
 
 ciphertext_message *encrypted_message;
 session_cipher_encrypt(cipher, message, message_len, &encrypted_message);
@@ -175,10 +186,12 @@ signal_protocol_store_context_destroy(store_context);
 
 The above example is simplified for the sake of clarity. All of these functions return errors
 on failure, and those errors should be checked for in real usage.
+Note that the calls to `session_builder_set_version` and `session_cipher_set_version` are only required
+when a the session should be set up for OMEMO version 0.4.0 or later.
 
 ## Memory management notes
 
-For every custom data type that the libsignal-protocol-c library can allocate and
+For every custom data type that the libomemo-c library can allocate and
 return, a corresponding way of deallocating an instance of that data type
 is provided.
 
@@ -206,10 +219,11 @@ The U.S. Government Department of Commerce, Bureau of Industry and Security (BIS
 The form and manner of this distribution makes it eligible for export under the License Exception ENC Technology Software Unrestricted (TSU) exception (see the BIS Export Administration Regulations, Section 740.13) for both object code and source code.
 
 ## License
-
+```
 Copyright 2015-2016 Open Whisper Systems
+Copyright 2020 Dino Team
 
 Licensed under the GPLv3: http://www.gnu.org/licenses/gpl-3.0.html
 
 Additional Permissions For Submission to Apple App Store: Provided that you are otherwise in compliance with the GPLv3 for each covered work you convey (including without limitation making the Corresponding Source available in compliance with Section 6 of the GPLv3), Open Whisper Systems also grants you the additional permission to convey through the Apple App Store non-source executable versions of the Program as incorporated into each applicable covered work as Executable Versions only under the Mozilla Public License version 2.0 (https://www.mozilla.org/en-US/MPL/2.0/).
-
+```
