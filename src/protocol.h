@@ -15,6 +15,7 @@ extern "C" {
 
 #define CIPHERTEXT_UNSUPPORTED_VERSION         1
 #define CIPHERTEXT_CURRENT_VERSION             3
+#define CIPHERTEXT_OMEMO_VERSION               4
 
 #define CIPHERTEXT_SIGNAL_TYPE                 2
 #define CIPHERTEXT_PREKEY_TYPE                 3

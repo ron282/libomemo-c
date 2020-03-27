@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "ratchet.h"
 #include "signal_protocol_types.h"
 
 #ifdef __cplusplus
@@ -76,6 +77,8 @@ uint32_t session_state_get_local_registration_id(const session_state *state);
 
 void session_state_set_needs_refresh(session_state *state, int value);
 int session_state_get_needs_refresh(const session_state *state);
+
+const struct ratchet_kdf_infos *session_state_get_kdf_infos(const session_state *state);
 
 void session_state_set_alice_base_key(session_state *state, ec_public_key *key);
 ec_public_key *session_state_get_alice_base_key(const session_state *state);

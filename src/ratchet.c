@@ -41,6 +41,22 @@ struct ratchet_identity_key_pair {
     ec_private_key *private_key;
 };
 
+struct ratchet_kdf_infos {
+    const char* key_material_seed;
+    const char* ratchet_seed;
+    const char* text_seed;
+};
+
+static const struct ratchet_kdf_infos signal_kdf_infos_data = {"WhisperMessageKeys", "WhisperRatchet", "WhisperText"};
+static const struct ratchet_kdf_infos omemo_kdf_infos_data = {"OMEMO Message Key Material", "OMEMO Root Chain", "OMEMO Payload"};
+
+const struct ratchet_kdf_infos* ratchet_kdf_infos_for_session_version(uint32_t version) {
+    if (version == 2 || version == 3) return &signal_kdf_infos_data;
+    if (version == 4) return &omemo_kdf_infos_data;
+    printf("Session version not supported: %d\n", version);
+    return 0;
+}
+
 int ratchet_chain_key_create(ratchet_chain_key **chain_key, hkdf_context *kdf, const uint8_t *key, size_t key_len, uint32_t index, signal_context *global_context)
 {
     ratchet_chain_key *result = 0;
@@ -160,10 +176,10 @@ complete:
     }
 }
 
-int ratchet_chain_key_get_message_keys(ratchet_chain_key *chain_key, ratchet_message_keys *message_keys)
+int ratchet_chain_key_get_message_keys(ratchet_chain_key *chain_key, ratchet_message_keys *message_keys, const struct ratchet_kdf_infos *infos)
 {
     static const uint8_t message_key_seed = 0x01;
-    static const char key_material_seed[] = "WhisperMessageKeys";
+    const char* key_material_seed = infos->key_material_seed;
     uint8_t salt[HASH_OUTPUT_SIZE];
     int result = 0;
     ssize_t result_size = 0;
@@ -188,7 +204,7 @@ int ratchet_chain_key_get_message_keys(ratchet_chain_key *chain_key, ratchet_mes
             &key_material_data,
             input_key_material, input_key_material_len,
             salt, sizeof(salt),
-            (uint8_t *)key_material_seed, sizeof(key_material_seed) - 1,
+            (uint8_t *)key_material_seed, strlen(key_material_seed),
             DERIVED_MESSAGE_SECRETS_SIZE);
     if(result_size < 0) {
         result = (int)result_size;
@@ -300,9 +316,9 @@ int ratchet_root_key_create(ratchet_root_key **root_key, hkdf_context *kdf, cons
 int ratchet_root_key_create_chain(ratchet_root_key *root_key,
         ratchet_root_key **new_root_key, ratchet_chain_key **new_chain_key,
         ec_public_key *their_ratchet_key,
-        ec_private_key *our_ratchet_key_private)
+        ec_private_key *our_ratchet_key_private, const struct ratchet_kdf_infos* infos)
 {
-    static const char key_info[] = "WhisperRatchet";
+    const char* key_info = infos->ratchet_seed;
     int result = 0;
     ssize_t result_size = 0;
     uint8_t *shared_secret = 0;
@@ -325,7 +341,7 @@ int ratchet_root_key_create_chain(ratchet_root_key *root_key,
     result_size = hkdf_derive_secrets(root_key->kdf, &derived_secret,
             shared_secret, shared_secret_len,
             root_key->key, root_key->key_len,
-            (uint8_t *)key_info, sizeof(key_info) - 1,
+            (uint8_t *)key_info, strlen(key_info),
             DERIVED_ROOT_SECRETS_SIZE);
     if(result_size < 0) {
         result = (int)result_size;
@@ -855,7 +871,7 @@ void bob_signal_protocol_parameters_destroy(signal_type_base *type)
 }
 
 int ratcheting_session_calculate_derived_keys(ratchet_root_key **root_key, ratchet_chain_key **chain_key,
-        uint8_t *secret, size_t secret_len, signal_context *global_context)
+        uint8_t *secret, size_t secret_len, signal_context *global_context, const struct ratchet_kdf_infos* infos)
 {
     int result = 0;
     ssize_t result_size = 0;
@@ -864,7 +880,7 @@ int ratcheting_session_calculate_derived_keys(ratchet_root_key **root_key, ratch
     ratchet_chain_key *chain_key_result = 0;
     uint8_t *output = 0;
     uint8_t salt[HASH_OUTPUT_SIZE];
-    static const char key_info[] = "WhisperText";
+    const char* key_info = infos->text_seed;
 
     result = hkdf_create(&kdf, 3, global_context);
     if(result < 0) {
@@ -876,7 +892,7 @@ int ratcheting_session_calculate_derived_keys(ratchet_root_key **root_key, ratch
     result_size = hkdf_derive_secrets(kdf, &output,
             secret, secret_len,
             salt, sizeof(salt),
-            (uint8_t *)key_info, sizeof(key_info) - 1, 64);
+            (uint8_t *)key_info, strlen(key_info), 64);
     if(result_size != 64) {
         result = SG_ERR_UNKNOWN;
         goto complete;
@@ -1073,7 +1089,7 @@ int ratcheting_session_alice_initialize(
     secret = vpool_get_buf(&vp);
     secret_len = vpool_get_length(&vp);
 
-    result = ratcheting_session_calculate_derived_keys(&derived_root, &derived_chain, secret, secret_len, global_context);
+    result = ratcheting_session_calculate_derived_keys(&derived_root, &derived_chain, secret, secret_len, global_context, session_state_get_kdf_infos(state));
     if(result < 0) {
         goto complete;
     }
@@ -1081,7 +1097,7 @@ int ratcheting_session_alice_initialize(
     result = ratchet_root_key_create_chain(derived_root,
             &sending_chain_root, &sending_chain_key,
             parameters->their_ratchet_key,
-            ec_key_pair_get_private(sending_ratchet_key));
+            ec_key_pair_get_private(sending_ratchet_key), session_state_get_kdf_infos(state));
     if(result < 0) {
         goto complete;
     }
@@ -1091,7 +1107,7 @@ int ratcheting_session_alice_initialize(
         goto complete;
     }
 
-    session_state_set_session_version(state, CIPHERTEXT_CURRENT_VERSION);
+    if (session_state_get_session_version(state) < CIPHERTEXT_CURRENT_VERSION) session_state_set_session_version(state, CIPHERTEXT_CURRENT_VERSION);
     session_state_set_remote_identity_key(state, parameters->their_identity_key);
     session_state_set_local_identity_key(state, parameters->our_identity_key->public_key);
     session_state_set_sender_chain(state, sending_ratchet_key, sending_chain_key);
@@ -1214,11 +1230,11 @@ int ratcheting_session_bob_initialize(
     secret = vpool_get_buf(&vp);
     secret_len = vpool_get_length(&vp);
 
-    result = ratcheting_session_calculate_derived_keys(&derived_root, &derived_chain, secret, secret_len, global_context);
+    result = ratcheting_session_calculate_derived_keys(&derived_root, &derived_chain, secret, secret_len, global_context, session_state_get_kdf_infos(state));
 
 complete:
     if(result >= 0) {
-        session_state_set_session_version(state, CIPHERTEXT_CURRENT_VERSION);
+        if (session_state_get_session_version(state) < CIPHERTEXT_CURRENT_VERSION) session_state_set_session_version(state, CIPHERTEXT_CURRENT_VERSION);
         session_state_set_remote_identity_key(state, parameters->their_identity_key);
         session_state_set_local_identity_key(state, parameters->our_identity_key->public_key);
         session_state_set_sender_chain(state, parameters->our_ratchet_key, derived_chain);

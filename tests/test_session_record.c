@@ -82,7 +82,7 @@ void fill_test_session_state(session_state *state, ec_public_key *receiver_chain
 
         ratchet_message_keys message_keys;
 
-        result = ratchet_chain_key_get_message_keys(receiver_chain_chain_key1, &message_keys);
+        result = ratchet_chain_key_get_message_keys(receiver_chain_chain_key1, &message_keys, ratchet_kdf_infos_for_session_version(2));
         ck_assert_int_eq(result, 0);
         result = session_state_set_message_keys(state, receiver_chain_ratchet_key1, &message_keys);
         ck_assert_int_eq(result, 0);
@@ -99,7 +99,7 @@ void fill_test_session_state(session_state *state, ec_public_key *receiver_chain
 
         ratchet_message_keys message_keys;
 
-        result = ratchet_chain_key_get_message_keys(receiver_chain_chain_key2, &message_keys);
+        result = ratchet_chain_key_get_message_keys(receiver_chain_chain_key2, &message_keys, ratchet_kdf_infos_for_session_version(2));
         ck_assert_int_eq(result, 0);
         result = session_state_set_message_keys(state, receiver_chain_ratchet_key2, &message_keys);
         ck_assert_int_eq(result, 0);

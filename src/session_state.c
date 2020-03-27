@@ -1263,6 +1263,12 @@ uint32_t session_state_get_session_version(const session_state *state)
     return state->session_version;
 }
 
+const struct ratchet_kdf_infos* session_state_get_kdf_infos(const session_state *state)
+{
+    assert(state);
+    return ratchet_kdf_infos_for_session_version(state->session_version);
+}
+
 void session_state_set_local_identity_key(session_state *state, ec_public_key *identity_key)
 {
     assert(state);

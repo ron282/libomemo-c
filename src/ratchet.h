@@ -9,12 +9,15 @@
 extern "C" {
 #endif
 
+struct ratchet_kdf_infos;
+const struct ratchet_kdf_infos* ratchet_kdf_infos_for_session_version(uint32_t version);
+
 int ratchet_chain_key_create(ratchet_chain_key **chain_key, hkdf_context *kdf,
         const uint8_t *key, size_t key_len, uint32_t index,
         signal_context *global_context);
 int ratchet_chain_key_get_key(const ratchet_chain_key *chain_key, signal_buffer **buffer);
 uint32_t ratchet_chain_key_get_index(const ratchet_chain_key *chain_key);
-int ratchet_chain_key_get_message_keys(ratchet_chain_key *chain_key, ratchet_message_keys *message_keys);
+int ratchet_chain_key_get_message_keys(ratchet_chain_key *chain_key, ratchet_message_keys *message_keys, const struct ratchet_kdf_infos *infos);
 int ratchet_chain_key_create_next(const ratchet_chain_key *chain_key, ratchet_chain_key **next_chain_key);
 void ratchet_chain_key_destroy(signal_type_base *type);
 
@@ -24,7 +27,7 @@ int ratchet_root_key_create(ratchet_root_key **root_key, hkdf_context *kdf,
 int ratchet_root_key_create_chain(ratchet_root_key *root_key,
         ratchet_root_key **new_root_key, ratchet_chain_key **new_chain_key,
         ec_public_key *their_ratchet_key,
-        ec_private_key *our_ratchet_key_private);
+        ec_private_key *our_ratchet_key_private, const struct ratchet_kdf_infos *infos);
 int ratchet_root_key_get_key(ratchet_root_key *root_key, signal_buffer **buffer);
 int ratchet_root_key_compare(const ratchet_root_key *key1, const ratchet_root_key *key2);
 void ratchet_root_key_destroy(signal_type_base *type);

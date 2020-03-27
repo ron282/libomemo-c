@@ -71,7 +71,7 @@ START_TEST(test_chain_key_derivation_v2)
     signal_buffer_free(actual_key);
 
     ratchet_message_keys message_keys;
-    result = ratchet_chain_key_get_message_keys(chain_key, &message_keys);
+    result = ratchet_chain_key_get_message_keys(chain_key, &message_keys, ratchet_kdf_infos_for_session_version(2));
     ck_assert_int_eq(result, 0);
 
     ck_assert_int_eq(memcmp(message_keys.cipher_key, messageKey, sizeof(messageKey)), 0);
@@ -93,7 +93,7 @@ START_TEST(test_chain_key_derivation_v2)
     ck_assert_int_eq(ratchet_chain_key_get_index(next_chain_key), 1);
 
     ratchet_message_keys next_message_keys;
-    result = ratchet_chain_key_get_message_keys(next_chain_key, &next_message_keys);
+    result = ratchet_chain_key_get_message_keys(next_chain_key, &next_message_keys, ratchet_kdf_infos_for_session_version(2));
     ck_assert_int_eq(result, 0);
     ck_assert_int_eq(next_message_keys.counter, 1);
 
@@ -143,7 +143,7 @@ START_TEST(test_chain_key_derivation_v3)
     signal_buffer_free(actual_key);
 
     ratchet_message_keys message_keys;
-    result = ratchet_chain_key_get_message_keys(chain_key, &message_keys);
+    result = ratchet_chain_key_get_message_keys(chain_key, &message_keys, ratchet_kdf_infos_for_session_version(3));
     ck_assert_int_eq(result, 0);
 
     ck_assert_int_eq(memcmp(message_keys.cipher_key, messageKey, sizeof(messageKey)), 0);
@@ -165,7 +165,79 @@ START_TEST(test_chain_key_derivation_v3)
     ck_assert_int_eq(ratchet_chain_key_get_index(next_chain_key), 1);
 
     ratchet_message_keys next_message_keys;
-    result = ratchet_chain_key_get_message_keys(next_chain_key, &next_message_keys);
+    result = ratchet_chain_key_get_message_keys(next_chain_key, &next_message_keys, ratchet_kdf_infos_for_session_version(3));
+    ck_assert_int_eq(result, 0);
+    ck_assert_int_eq(next_message_keys.counter, 1);
+
+    SIGNAL_UNREF(chain_key);
+    SIGNAL_UNREF(next_chain_key);
+}
+END_TEST
+
+START_TEST(test_chain_key_derivation_v4)
+{
+    int result = 0;
+
+    uint8_t messageKey[] = {
+            0x0f, 0x6c, 0x97, 0x68, 0x63, 0x33, 0x6e, 0x89,
+            0xbf, 0x7c, 0x8c, 0x10, 0xc1, 0x8d, 0x9f, 0xde,
+            0x60, 0xb4, 0xde, 0xbd, 0x1f, 0xf8, 0x32, 0xb8,
+            0x63, 0xbb, 0xb1, 0x9e, 0xeb, 0x4c, 0x88, 0x24};
+
+    uint8_t macKey[] = {
+            0x36, 0x0a, 0x0e, 0x0a, 0x03, 0x2c, 0xaa, 0x4f,
+            0xf6, 0x80, 0x92, 0xa5, 0x6e, 0x90, 0xbb, 0xe5,
+            0x3e, 0x81, 0xe2, 0x24, 0xe9, 0x3f, 0xfb, 0x2d,
+            0x0b, 0xb7, 0xc0, 0xf4, 0xc2, 0xa0, 0x18, 0x38};
+
+    uint8_t nextChainKey[] = {
+            0x28, 0xe8, 0xf8, 0xfe, 0xe5, 0x4b, 0x80, 0x1e,
+            0xef, 0x7c, 0x5c, 0xfb, 0x2f, 0x17, 0xf3, 0x2c,
+            0x7b, 0x33, 0x44, 0x85, 0xbb, 0xb7, 0x0f, 0xac,
+            0x6e, 0xc1, 0x03, 0x42, 0xa2, 0x46, 0xd1, 0x5d};
+
+    hkdf_context *kdf;
+    result = hkdf_create(&kdf, 4, global_context);
+    ck_assert_int_eq(result, 0);
+
+    ratchet_chain_key *chain_key;
+    result = ratchet_chain_key_create(&chain_key, kdf, seed, sizeof(seed), 0, global_context);
+    ck_assert_int_eq(result, 0);
+
+    SIGNAL_UNREF(kdf);
+
+    signal_buffer *actual_key;
+    result = ratchet_chain_key_get_key(chain_key, &actual_key);
+    ck_assert_int_eq(result, 0);
+    int actual_key_len = signal_buffer_len(actual_key);
+    ck_assert_int_eq(actual_key_len, sizeof(seed));
+    ck_assert_int_eq(memcmp(signal_buffer_data(actual_key), seed, actual_key_len), 0);
+    signal_buffer_free(actual_key);
+
+    ratchet_message_keys message_keys;
+    result = ratchet_chain_key_get_message_keys(chain_key, &message_keys, ratchet_kdf_infos_for_session_version(4));
+    ck_assert_int_eq(result, 0);
+
+    ck_assert_int_eq(memcmp(message_keys.cipher_key, messageKey, sizeof(messageKey)), 0);
+    ck_assert_int_eq(memcmp(message_keys.mac_key, macKey, sizeof(macKey)), 0);
+    ck_assert_int_eq(message_keys.counter, 0);
+
+    ratchet_chain_key *next_chain_key;
+    result = ratchet_chain_key_create_next(chain_key, &next_chain_key);
+    ck_assert_int_eq(result, 0);
+
+    result = ratchet_chain_key_get_key(next_chain_key, &actual_key);
+    ck_assert_int_eq(result, 0);
+    actual_key_len = signal_buffer_len(actual_key);
+    ck_assert_int_eq(actual_key_len, sizeof(nextChainKey));
+    ck_assert_int_eq(memcmp(signal_buffer_data(actual_key), nextChainKey, actual_key_len), 0);
+    signal_buffer_free(actual_key);
+
+    ck_assert_int_eq(ratchet_chain_key_get_index(chain_key), 0);
+    ck_assert_int_eq(ratchet_chain_key_get_index(next_chain_key), 1);
+
+    ratchet_message_keys next_message_keys;
+    result = ratchet_chain_key_get_message_keys(next_chain_key, &next_message_keys, ratchet_kdf_infos_for_session_version(4));
     ck_assert_int_eq(result, 0);
     ck_assert_int_eq(next_message_keys.counter, 1);
 
@@ -236,7 +308,8 @@ START_TEST(test_root_key_derivation_v2)
     ratchet_chain_key *next_chain_key;
     result = ratchet_root_key_create_chain(root_key,
             &next_root_key, &next_chain_key,
-            bob_public_key, alice_private_key);
+            bob_public_key, alice_private_key,
+            ratchet_kdf_infos_for_session_version(2));
     ck_assert_int_eq(result, 0);
 
     /* Check the value of the root key */
@@ -613,6 +686,7 @@ Suite *ratchet_suite(void)
     tcase_add_checked_fixture(tcase_chain_key, test_setup, test_teardown);
     tcase_add_test(tcase_chain_key, test_chain_key_derivation_v2);
     tcase_add_test(tcase_chain_key, test_chain_key_derivation_v3);
+    tcase_add_test(tcase_chain_key, test_chain_key_derivation_v4);
     suite_add_tcase(suite, tcase_chain_key);
 
     TCase *tcase_root_key = tcase_create("root_key");

@@ -142,7 +142,7 @@ int session_cipher_encrypt(session_cipher *cipher,
         goto complete;
     }
 
-    result = ratchet_chain_key_get_message_keys(chain_key, &message_keys);
+    result = ratchet_chain_key_get_message_keys(chain_key, &message_keys, session_state_get_kdf_infos(state));
     if(result < 0) {
         goto complete;
     }
@@ -590,7 +590,8 @@ static int session_cipher_get_or_create_chain_key(session_cipher *cipher,
 
     result = ratchet_root_key_create_chain(root_key,
             &receiver_root_key, &receiver_chain_key,
-            their_ephemeral, ec_key_pair_get_private(our_ephemeral));
+            their_ephemeral, ec_key_pair_get_private(our_ephemeral),
+            session_state_get_kdf_infos(state));
     if(result < 0) {
         goto complete;
     }
@@ -602,7 +603,8 @@ static int session_cipher_get_or_create_chain_key(session_cipher *cipher,
 
     result = ratchet_root_key_create_chain(receiver_root_key,
             &sender_root_key, &sender_chain_key,
-            their_ephemeral, ec_key_pair_get_private(our_new_ephemeral));
+            their_ephemeral, ec_key_pair_get_private(our_new_ephemeral),
+            session_state_get_kdf_infos(state));
     if(result < 0) {
         goto complete;
     }
@@ -676,7 +678,7 @@ static int session_cipher_get_or_create_message_keys(ratchet_message_keys *messa
     SIGNAL_REF(cur_chain_key);
 
     while(ratchet_chain_key_get_index(cur_chain_key) < counter) {
-        result = ratchet_chain_key_get_message_keys(cur_chain_key, &message_keys_result);
+        result = ratchet_chain_key_get_message_keys(cur_chain_key, &message_keys_result, session_state_get_kdf_infos(state));
         if(result < 0) {
             goto complete;
         }
@@ -705,7 +707,7 @@ static int session_cipher_get_or_create_message_keys(ratchet_message_keys *messa
         goto complete;
     }
 
-    result = ratchet_chain_key_get_message_keys(cur_chain_key, &message_keys_result);
+    result = ratchet_chain_key_get_message_keys(cur_chain_key, &message_keys_result, session_state_get_kdf_infos(state));
     if(result < 0) {
         goto complete;
     }
