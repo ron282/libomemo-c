@@ -26,7 +26,7 @@ signal_context *global_context;
 pthread_mutex_t global_mutex;
 pthread_mutexattr_t global_mutex_attr;
 
-void run_interaction(signal_protocol_store_context *alice_store, signal_protocol_store_context *bob_store);
+void run_interaction(signal_protocol_store_context *alice_store, signal_protocol_store_context *bob_store, uint32_t version);
 int test_basic_pre_key_v3_decrypt_callback(session_cipher *cipher, signal_buffer *plaintext, void *decrypt_context);
 
 void test_lock(void *user_data)
@@ -324,7 +324,7 @@ START_TEST(test_basic_pre_key_v3)
     fprintf(stderr, "Pre-interaction tests complete\n");
 
     /* Interaction tests */
-    run_interaction(alice_store, bob_store);
+    run_interaction(alice_store, bob_store, version);
 
     /* Cleanup state from previous tests that we need to replace */
     signal_protocol_store_context_destroy(alice_store); alice_store = 0;
@@ -460,6 +460,377 @@ START_TEST(test_basic_pre_key_v3)
             signal_buffer_data(bob_signed_pre_key_signature),
             signal_buffer_len(bob_signed_pre_key_signature),
             ratchet_identity_key_pair_get_public(alice_identity_key_pair));
+    ck_assert_int_eq(result, 0);
+
+    /* Have Alice process Bob's new pre key bundle, which should fail */
+    result = session_builder_process_pre_key_bundle(alice_session_builder, bob_pre_key);
+    ck_assert_int_eq(result, SG_ERR_UNTRUSTED_IDENTITY);
+
+    fprintf(stderr, "Post-interaction tests complete\n");
+
+    /* Cleanup */
+    SIGNAL_UNREF(alice_identity_key_pair);
+    SIGNAL_UNREF(test_public_key);
+    SIGNAL_UNREF(bob_pre_key);
+    signal_buffer_free(plaintext);
+    SIGNAL_UNREF(outgoing_message);
+    SIGNAL_UNREF(outgoing_message_copy);
+    SIGNAL_UNREF(bob_signed_pre_key_record);
+    SIGNAL_UNREF(bob_pre_key_record);
+    signal_buffer_free(bob_signed_pre_key_signature);
+    SIGNAL_UNREF(bob_pre_key_pair);
+    SIGNAL_UNREF(bob_signed_pre_key_pair);
+    SIGNAL_UNREF(bob_identity_key_pair);
+    session_cipher_free(bob_session_cipher);
+    signal_protocol_store_context_destroy(bob_store);
+    session_builder_free(alice_session_builder);
+    session_cipher_free(alice_session_cipher);
+    signal_protocol_store_context_destroy(alice_store);
+}
+END_TEST
+
+START_TEST(test_basic_pre_key_omemo)
+{
+    int result = 0;
+    int version = 4;
+
+    /* Create Alice's data store and session builder */
+    signal_protocol_store_context *alice_store = 0;
+    setup_test_store_context(&alice_store, global_context);
+    session_builder *alice_session_builder = 0;
+    result = session_builder_create(&alice_session_builder, alice_store, &bob_address, global_context);
+    ck_assert_int_eq(result, 0);
+    session_builder_set_version(alice_session_builder, version);
+
+    /* Create Bob's data store and pre key bundle */
+    signal_protocol_store_context *bob_store = 0;
+    setup_test_store_context(&bob_store, global_context);
+
+    uint32_t bob_local_registration_id = 0;
+    result = signal_protocol_identity_get_local_registration_id(bob_store, &bob_local_registration_id);
+    ck_assert_int_eq(result, 0);
+
+    ec_key_pair *bob_pre_key_pair = 0;
+    result = curve_generate_key_pair(global_context, &bob_pre_key_pair);
+    ck_assert_int_eq(result, 0);
+
+    ec_key_pair *bob_signed_pre_key_pair = 0;
+    result = curve_generate_key_pair(global_context, &bob_signed_pre_key_pair);
+    ck_assert_int_eq(result, 0);
+
+    ratchet_identity_key_pair *bob_identity_key_pair = 0;
+    result = signal_protocol_identity_get_key_pair(bob_store, &bob_identity_key_pair);
+    ck_assert_int_eq(result, 0);
+
+    signal_buffer *bob_signed_pre_key_public_serialized = 0;
+    result = ec_public_key_serialize(&bob_signed_pre_key_public_serialized,
+                                     ec_key_pair_get_public(bob_signed_pre_key_pair));
+    ck_assert_int_eq(result, 0);
+
+    signal_buffer *bob_signed_pre_key_signature = 0;
+    result = curve_calculate_signature(global_context,
+                                       &bob_signed_pre_key_signature,
+                                       ratchet_identity_key_pair_get_private(bob_identity_key_pair),
+                                       signal_buffer_data(bob_signed_pre_key_public_serialized),
+                                       signal_buffer_len(bob_signed_pre_key_public_serialized));
+    ck_assert_int_eq(result, 0);
+
+    session_pre_key_bundle *bob_pre_key = 0;
+    result = session_pre_key_bundle_create(&bob_pre_key,
+                                           bob_local_registration_id,
+                                           1, /* device ID */
+                                           31337, /* pre key ID */
+                                           ec_key_pair_get_public(bob_pre_key_pair),
+                                           22, /* signed pre key ID */
+                                           ec_key_pair_get_public(bob_signed_pre_key_pair),
+                                           signal_buffer_data(bob_signed_pre_key_signature),
+                                           signal_buffer_len(bob_signed_pre_key_signature),
+                                           ratchet_identity_key_pair_get_public(bob_identity_key_pair));
+    ck_assert_int_eq(result, 0);
+
+    signal_buffer_free(bob_signed_pre_key_public_serialized);
+
+    /* Have Alice process Bob's pre key bundle */
+    result = session_builder_process_pre_key_bundle(alice_session_builder, bob_pre_key);
+    ck_assert_int_eq(result, 0);
+
+    /* Check that we can load the session state and verify its version */
+    result = signal_protocol_session_contains_session(alice_store, &bob_address);
+    ck_assert_int_eq(result, 1);
+
+    session_record *loaded_record = 0;
+    session_state *loaded_record_state = 0;
+    result = signal_protocol_session_load_session(alice_store, &loaded_record, &bob_address, version);
+    ck_assert_int_eq(result, 0);
+
+    loaded_record_state = session_record_get_state(loaded_record);
+    ck_assert_ptr_ne(loaded_record_state, 0);
+
+    ck_assert_int_eq(session_state_get_session_version(loaded_record_state), 4);
+
+    SIGNAL_UNREF(loaded_record);
+    loaded_record = 0;
+    loaded_record_state = 0;
+
+    /* Encrypt an outgoing message to send to Bob */
+    static const char original_message[] = "L'homme est condamné à être libre";
+    size_t original_message_len = sizeof(original_message) - 1;
+    session_cipher *alice_session_cipher = 0;
+    result = session_cipher_create(&alice_session_cipher, alice_store, &bob_address, global_context);
+    ck_assert_int_eq(result, 0);
+    session_cipher_set_version(alice_session_cipher, version);
+
+    ciphertext_message *outgoing_message = 0;
+    result = session_cipher_encrypt(alice_session_cipher, (uint8_t *)original_message, original_message_len, &outgoing_message);
+    ck_assert_int_eq(result, 0);
+
+    ck_assert_int_eq(ciphertext_message_get_type(outgoing_message), CIPHERTEXT_PREKEY_TYPE);
+
+    /* Convert to an incoming message for Bob */
+    signal_buffer *outgoing_serialized = ciphertext_message_get_serialized(outgoing_message);
+    pre_key_signal_message *incoming_message = 0;
+    result = pre_key_signal_message_deserialize_omemo(&incoming_message,
+                                                signal_buffer_data(outgoing_serialized),
+                                                signal_buffer_len(outgoing_serialized),
+                                                bob_local_registration_id,
+                                                global_context);
+    ck_assert_int_eq(result, 0);
+
+    /* Save the pre key and signed pre key in Bob's data store */
+    session_pre_key *bob_pre_key_record = 0;
+    result = session_pre_key_create(&bob_pre_key_record,
+                                    session_pre_key_bundle_get_pre_key_id(bob_pre_key),
+                                    bob_pre_key_pair);
+    ck_assert_int_eq(result, 0);
+
+    result = signal_protocol_pre_key_store_key(bob_store, bob_pre_key_record);
+    ck_assert_int_eq(result, 0);
+
+    session_signed_pre_key *bob_signed_pre_key_record = 0;
+    result = session_signed_pre_key_create(&bob_signed_pre_key_record,
+                                           22, time(0),
+                                           bob_signed_pre_key_pair,
+                                           signal_buffer_data(bob_signed_pre_key_signature),
+                                           signal_buffer_len(bob_signed_pre_key_signature));
+    ck_assert_int_eq(result, 0);
+
+    result = signal_protocol_signed_pre_key_store_key(bob_store, bob_signed_pre_key_record);
+    ck_assert_int_eq(result, 0);
+
+    /* Create Bob's session cipher and decrypt the message from Alice */
+    session_cipher *bob_session_cipher = 0;
+    result = session_cipher_create(&bob_session_cipher, bob_store, &alice_address, global_context);
+    ck_assert_int_eq(result, 0);
+    session_cipher_set_version(bob_session_cipher, version);
+
+    /* Prepare the data for the callback test */
+    int callback_context = 1234;
+    test_basic_pre_key_v3_callback_data callback_data = {
+            .original_message = original_message,
+            .original_message_len = original_message_len,
+            .bob_store = bob_store
+    };
+    session_cipher_set_user_data(bob_session_cipher, &callback_data);
+    session_cipher_set_decryption_callback(bob_session_cipher, test_basic_pre_key_v3_decrypt_callback);
+
+    signal_buffer *plaintext = 0;
+    result = session_cipher_decrypt_pre_key_signal_message(bob_session_cipher, incoming_message, &callback_context, &plaintext);
+    ck_assert_int_eq(result, 0);
+
+    /* Clean up callback data */
+    session_cipher_set_user_data(bob_session_cipher, 0);
+    session_cipher_set_decryption_callback(bob_session_cipher, 0);
+
+    /* Verify Bob's session state and the decrypted message */
+    ck_assert_int_eq(signal_protocol_session_contains_session(bob_store, &alice_address), 1);
+
+    session_record *alice_recipient_session_record = 0;
+    signal_protocol_session_load_session(bob_store, &alice_recipient_session_record, &alice_address, version);
+
+    session_state *alice_recipient_session_state = session_record_get_state(alice_recipient_session_record);
+    ck_assert_int_eq(session_state_get_session_version(alice_recipient_session_state), 4);
+    ck_assert_ptr_ne(session_state_get_alice_base_key(alice_recipient_session_state), 0);
+
+    uint8_t *plaintext_data = signal_buffer_data(plaintext);
+    size_t plaintext_len = signal_buffer_len(plaintext);
+
+    ck_assert_int_eq(original_message_len, plaintext_len);
+    ck_assert_int_eq(memcmp(original_message, plaintext_data, plaintext_len), 0);
+
+    /* Have Bob send a reply to Alice */
+    ciphertext_message *bob_outgoing_message = 0;
+    result = session_cipher_encrypt(bob_session_cipher, (uint8_t *)original_message, original_message_len, &bob_outgoing_message);
+    ck_assert_int_eq(result, 0);
+
+    ck_assert_int_eq(ciphertext_message_get_type(bob_outgoing_message), CIPHERTEXT_SIGNAL_TYPE);
+
+    /* Verify that Alice can decrypt it */
+    signal_message *bob_outgoing_message_copy = 0;
+    result = signal_message_copy(&bob_outgoing_message_copy, (signal_message *)bob_outgoing_message, global_context);
+    ck_assert_int_eq(result, 0);
+
+    signal_buffer *alice_plaintext = 0;
+    result = session_cipher_decrypt_signal_message(alice_session_cipher, bob_outgoing_message_copy, 0, &alice_plaintext);
+    ck_assert_int_eq(result, 0);
+
+    uint8_t *alice_plaintext_data = signal_buffer_data(alice_plaintext);
+    size_t alice_plaintext_len = signal_buffer_len(alice_plaintext);
+
+    ck_assert_int_eq(original_message_len, alice_plaintext_len);
+    ck_assert_int_eq(memcmp(original_message, alice_plaintext_data, alice_plaintext_len), 0);
+
+    signal_buffer_free(alice_plaintext); alice_plaintext = 0;
+    SIGNAL_UNREF(bob_outgoing_message); bob_outgoing_message = 0;
+    SIGNAL_UNREF(bob_outgoing_message_copy); bob_outgoing_message_copy = 0;
+    SIGNAL_UNREF(alice_recipient_session_record); alice_recipient_session_record = 0;
+    signal_buffer_free(plaintext); plaintext = 0;
+    SIGNAL_UNREF(incoming_message); incoming_message = 0;
+    SIGNAL_UNREF(outgoing_message); outgoing_message = 0;
+    SIGNAL_UNREF(bob_pre_key); bob_pre_key = 0;
+    session_cipher_free(alice_session_cipher); alice_session_cipher = 0;
+    session_builder_free(alice_session_builder); alice_session_builder = 0;
+
+    fprintf(stderr, "Pre-interaction tests complete\n");
+
+    /* Interaction tests */
+    run_interaction(alice_store, bob_store, version);
+
+    /* Cleanup state from previous tests that we need to replace */
+    signal_protocol_store_context_destroy(alice_store); alice_store = 0;
+    SIGNAL_UNREF(bob_pre_key_pair); bob_pre_key_pair = 0;
+    SIGNAL_UNREF(bob_signed_pre_key_pair); bob_signed_pre_key_pair = 0;
+    SIGNAL_UNREF(bob_identity_key_pair); bob_identity_key_pair = 0;
+    signal_buffer_free(bob_signed_pre_key_signature); bob_signed_pre_key_signature = 0;
+    SIGNAL_UNREF(bob_pre_key_record); bob_pre_key_record = 0;
+    SIGNAL_UNREF(bob_signed_pre_key_record); bob_signed_pre_key_record = 0;
+
+    /* Create Alice's new session data */
+    setup_test_store_context(&alice_store, global_context);
+    result = session_builder_create(&alice_session_builder, alice_store, &bob_address, global_context);
+    ck_assert_int_eq(result, 0);
+    session_builder_set_version(alice_session_builder, version);
+    result = session_cipher_create(&alice_session_cipher, alice_store, &bob_address, global_context);
+    ck_assert_int_eq(result, 0);
+    session_cipher_set_version(alice_session_cipher, version);
+
+    /* Create Bob's new pre key bundle */
+    result = curve_generate_key_pair(global_context, &bob_pre_key_pair);
+    ck_assert_int_eq(result, 0);
+
+    result = curve_generate_key_pair(global_context, &bob_signed_pre_key_pair);
+    ck_assert_int_eq(result, 0);
+
+    result = signal_protocol_identity_get_key_pair(bob_store, &bob_identity_key_pair);
+    ck_assert_int_eq(result, 0);
+
+    result = ec_public_key_serialize(&bob_signed_pre_key_public_serialized,
+                                     ec_key_pair_get_public(bob_signed_pre_key_pair));
+    ck_assert_int_eq(result, 0);
+
+    result = curve_calculate_signature(global_context,
+                                       &bob_signed_pre_key_signature,
+                                       ratchet_identity_key_pair_get_private(bob_identity_key_pair),
+                                       signal_buffer_data(bob_signed_pre_key_public_serialized),
+                                       signal_buffer_len(bob_signed_pre_key_public_serialized));
+    ck_assert_int_eq(result, 0);
+
+    result = session_pre_key_bundle_create(&bob_pre_key,
+                                           bob_local_registration_id,
+                                           1, /* device ID */
+                                           31338, /* pre key ID */
+                                           ec_key_pair_get_public(bob_pre_key_pair),
+                                           23, /* signed pre key ID */
+                                           ec_key_pair_get_public(bob_signed_pre_key_pair),
+                                           signal_buffer_data(bob_signed_pre_key_signature),
+                                           signal_buffer_len(bob_signed_pre_key_signature),
+                                           ratchet_identity_key_pair_get_public(bob_identity_key_pair));
+    ck_assert_int_eq(result, 0);
+
+    signal_buffer_free(bob_signed_pre_key_public_serialized);
+
+    /* Save the new pre key and signed pre key in Bob's data store */
+    result = session_pre_key_create(&bob_pre_key_record,
+                                    session_pre_key_bundle_get_pre_key_id(bob_pre_key),
+                                    bob_pre_key_pair);
+    ck_assert_int_eq(result, 0);
+
+    result = signal_protocol_pre_key_store_key(bob_store, bob_pre_key_record);
+    ck_assert_int_eq(result, 0);
+
+    result = session_signed_pre_key_create(&bob_signed_pre_key_record,
+                                           23, time(0),
+                                           bob_signed_pre_key_pair,
+                                           signal_buffer_data(bob_signed_pre_key_signature),
+                                           signal_buffer_len(bob_signed_pre_key_signature));
+    ck_assert_int_eq(result, 0);
+
+    result = signal_protocol_signed_pre_key_store_key(bob_store, bob_signed_pre_key_record);
+    ck_assert_int_eq(result, 0);
+
+    /* Have Alice process Bob's pre key bundle */
+    result = session_builder_process_pre_key_bundle(alice_session_builder, bob_pre_key);
+    ck_assert_int_eq(result, 0);
+
+    /* Have Alice encrypt a message for Bob */
+    result = session_cipher_encrypt(alice_session_cipher, (uint8_t *)original_message, original_message_len, &outgoing_message);
+    ck_assert_int_eq(result, 0);
+
+    ck_assert_int_eq(ciphertext_message_get_type(outgoing_message), CIPHERTEXT_PREKEY_TYPE);
+
+    /* Have Bob try to decrypt the message */
+    pre_key_signal_message *outgoing_message_copy = 0;
+    result = pre_key_signal_message_copy(&outgoing_message_copy, (pre_key_signal_message *)outgoing_message, global_context);
+    ck_assert_int_eq(result, 0);
+
+    /* The decrypt should fail with a specific error */
+    result = session_cipher_decrypt_pre_key_signal_message(bob_session_cipher, outgoing_message_copy, 0, &plaintext);
+    ck_assert_int_eq(result, SG_ERR_UNTRUSTED_IDENTITY);
+    SIGNAL_UNREF(outgoing_message_copy); outgoing_message_copy = 0;
+    signal_buffer_free(plaintext); plaintext = 0;
+
+    result = pre_key_signal_message_copy(&outgoing_message_copy, (pre_key_signal_message *)outgoing_message, global_context);
+    ck_assert_int_eq(result, 0);
+
+    /* Save the identity key to Bob's store */
+    result = signal_protocol_identity_save_identity(bob_store,
+                                                    &alice_address,
+                                                    pre_key_signal_message_get_identity_key(outgoing_message_copy));
+    ck_assert_int_eq(result, 0);
+    SIGNAL_UNREF(outgoing_message_copy); outgoing_message_copy = 0;
+
+    /* Try the decrypt again, this time it should succeed */
+    result = pre_key_signal_message_copy(&outgoing_message_copy, (pre_key_signal_message *)outgoing_message, global_context);
+    ck_assert_int_eq(result, 0);
+
+    result = session_cipher_decrypt_pre_key_signal_message(bob_session_cipher, outgoing_message_copy, 0, &plaintext);
+    ck_assert_int_eq(result, SG_SUCCESS);
+    SIGNAL_UNREF(outgoing_message_copy); outgoing_message_copy = 0;
+
+    plaintext_data = signal_buffer_data(plaintext);
+    plaintext_len = signal_buffer_len(plaintext);
+
+    ck_assert_int_eq(original_message_len, plaintext_len);
+    ck_assert_int_eq(memcmp(original_message, plaintext_data, plaintext_len), 0);
+
+    SIGNAL_UNREF(bob_pre_key); bob_pre_key = 0;
+
+    /* Create a new pre key for Bob */
+    ec_public_key *test_public_key = create_test_ec_public_key(global_context);
+
+    ratchet_identity_key_pair *alice_identity_key_pair = 0;
+    result = signal_protocol_identity_get_key_pair(alice_store, &alice_identity_key_pair);
+    ck_assert_int_eq(result, 0);
+
+    result = session_pre_key_bundle_create(&bob_pre_key,
+                                           bob_local_registration_id,
+                                           1, /* device ID */
+                                           31337, /* pre key ID */
+                                           test_public_key,
+                                           23, /* signed pre key ID */
+                                           ec_key_pair_get_public(bob_signed_pre_key_pair),
+                                           signal_buffer_data(bob_signed_pre_key_signature),
+                                           signal_buffer_len(bob_signed_pre_key_signature),
+                                           ratchet_identity_key_pair_get_public(alice_identity_key_pair));
     ck_assert_int_eq(result, 0);
 
     /* Have Alice process Bob's new pre key bundle, which should fail */
@@ -1278,7 +1649,7 @@ signal_buffer *create_looping_message_short(int index)
     return buffer;
 }
 
-void run_interaction(signal_protocol_store_context *alice_store, signal_protocol_store_context *bob_store)
+void run_interaction(signal_protocol_store_context *alice_store, signal_protocol_store_context *bob_store, uint32_t version)
 {
     int result = 0;
 
@@ -1493,10 +1864,17 @@ void run_interaction(signal_protocol_store_context *alice_store, signal_protocol
     /* Shuffled Alice -> Bob */
     for(i = 0; i < 10; i++) {
         signal_message *ooo_message_deserialized = 0;
-        result = signal_message_deserialize(&ooo_message_deserialized,
-                signal_buffer_data(alice_ooo_ciphertext[i]),
-                signal_buffer_len(alice_ooo_ciphertext[i]),
-                global_context);
+        if (version >= 4) {
+            result = signal_message_deserialize_omemo(&ooo_message_deserialized,
+                    signal_buffer_data(alice_ooo_ciphertext[i]),
+                    signal_buffer_len(alice_ooo_ciphertext[i]),
+                    global_context);
+        } else {
+            result = signal_message_deserialize(&ooo_message_deserialized,
+                    signal_buffer_data(alice_ooo_ciphertext[i]),
+                    signal_buffer_len(alice_ooo_ciphertext[i]),
+                    global_context);
+        }
         ck_assert_int_eq(result, 0);
 
         signal_buffer *ooo_plaintext = 0;
@@ -1527,6 +1905,7 @@ Suite *session_builder_suite(void)
     tcase_add_checked_fixture(tcase, test_setup, test_teardown);
     tcase_add_test(tcase, test_basic_pre_key_v2);
     tcase_add_test(tcase, test_basic_pre_key_v3);
+    tcase_add_test(tcase, test_basic_pre_key_omemo);
     tcase_add_test(tcase, test_bad_signed_pre_key_signature);
     tcase_add_test(tcase, test_repeat_bundle_message_v2);
     tcase_add_test(tcase, test_repeat_bundle_message_v3);
