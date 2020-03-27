@@ -51,6 +51,9 @@ int session_builder_create(session_builder **builder,
  */
 int session_builder_process_pre_key_bundle(session_builder *builder, session_pre_key_bundle *bundle);
 
+uint32_t session_builder_get_version(const session_builder *builder);
+void session_builder_set_version(session_builder* builder, uint32_t version);
+
 void session_builder_free(session_builder *builder);
 
 #ifdef __cplusplus

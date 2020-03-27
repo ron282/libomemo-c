@@ -15,6 +15,7 @@ struct session_builder
 {
     signal_protocol_store_context *store;
     const signal_protocol_address *remote_address;
+    uint32_t preferred_version;
     signal_context *global_context;
 };
 
@@ -39,9 +40,20 @@ int session_builder_create(session_builder **builder,
     result->store = store;
     result->remote_address = remote_address;
     result->global_context = global_context;
+    result->preferred_version = 2;
 
     *builder = result;
     return 0;
+}
+
+uint32_t session_builder_get_version(const session_builder *builder) {
+    assert(builder);
+    return builder->preferred_version;
+}
+
+void session_builder_set_version(session_builder *builder, uint32_t version) {
+    assert(builder);
+    builder->preferred_version = version;
 }
 
 int session_builder_process_pre_key_signal_message(session_builder *builder,
@@ -257,7 +269,7 @@ int session_builder_process_pre_key_bundle(session_builder *builder, session_pre
         goto complete;
     }
 
-    result = signal_protocol_session_load_session(builder->store, &record, builder->remote_address);
+    result = signal_protocol_session_load_session(builder->store, &record, builder->remote_address, builder->preferred_version);
     if(result < 0) {
         goto complete;
     }

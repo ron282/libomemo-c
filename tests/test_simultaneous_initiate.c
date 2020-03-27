@@ -1489,15 +1489,16 @@ END_TEST
 int is_session_id_equal(signal_protocol_store_context *alice_store, signal_protocol_store_context *bob_store)
 {
     int result = 0;
+    int version = 2;
     session_record *alice_store_record = 0;
     session_record *bob_store_record = 0;
     ec_public_key *alice_store_alice_base_key = 0;
     ec_public_key *bob_store_alice_base_key = 0;
 
-    result = signal_protocol_session_load_session(alice_store, &alice_store_record, &bob_address);
+    result = signal_protocol_session_load_session(alice_store, &alice_store_record, &bob_address, version);
     ck_assert_int_eq(result, 0);
 
-    result = signal_protocol_session_load_session(bob_store, &bob_store_record, &alice_address);
+    result = signal_protocol_session_load_session(bob_store, &bob_store_record, &alice_address, version);
     ck_assert_int_eq(result, 0);
 
     alice_store_alice_base_key =
@@ -1520,10 +1521,11 @@ int is_session_id_equal(signal_protocol_store_context *alice_store, signal_proto
 int current_session_version(signal_protocol_store_context *store, const signal_protocol_address *address)
 {
     int result = 0;
+    int version = 2;
     session_record *record = 0;
     session_state *state = 0;
 
-    result = signal_protocol_session_load_session(store, &record, address);
+    result = signal_protocol_session_load_session(store, &record, address, version);
     ck_assert_int_eq(result, 0);
 
     state = session_record_get_state(record);

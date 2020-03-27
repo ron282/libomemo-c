@@ -758,7 +758,7 @@ void signal_protocol_store_context_destroy(signal_protocol_store_context *contex
  * library data structures.
  */
 
-int signal_protocol_session_load_session(signal_protocol_store_context *context, session_record **record, const signal_protocol_address *address);
+int signal_protocol_session_load_session(signal_protocol_store_context *context, session_record **record, const signal_protocol_address *address, uint32_t version);
 int signal_protocol_session_get_sub_device_sessions(signal_protocol_store_context *context, signal_int_list **sessions, const char *name, size_t name_len);
 int signal_protocol_session_store_session(signal_protocol_store_context *context, const signal_protocol_address *address, session_record *record);
 int signal_protocol_session_contains_session(signal_protocol_store_context *context, const signal_protocol_address *address);

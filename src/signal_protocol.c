@@ -709,7 +709,7 @@ void signal_protocol_store_context_destroy(signal_protocol_store_context *contex
 
 /*------------------------------------------------------------------------*/
 
-int signal_protocol_session_load_session(signal_protocol_store_context *context, session_record **record, const signal_protocol_address *address)
+int signal_protocol_session_load_session(signal_protocol_store_context *context, session_record **record, const signal_protocol_address *address, uint32_t version)
 {
     int result = 0;
     signal_buffer *buffer = 0;
@@ -732,6 +732,7 @@ int signal_protocol_session_load_session(signal_protocol_store_context *context,
             goto complete;
         }
         result = session_record_create(&result_record, 0, context->global_context);
+        session_record_set_version(result_record, version);
     }
     else if(result == 1) {
         if(!buffer) {

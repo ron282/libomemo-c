@@ -14,6 +14,9 @@ int session_record_serialize(signal_buffer **buffer, const session_record *recor
 int session_record_deserialize(session_record **record, const uint8_t *data, size_t len, signal_context *global_context);
 int session_record_copy(session_record **record, session_record *other_record, signal_context *global_context);
 
+uint32_t session_record_get_version(const session_record *record);
+void session_record_set_version(session_record *record, uint32_t version);
+
 int session_record_has_session_state(session_record *record, uint32_t version, const ec_public_key *alice_base_key);
 session_state *session_record_get_state(session_record *record);
 void session_record_set_state(session_record *record, session_state *state);

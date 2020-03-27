@@ -76,6 +76,16 @@ int session_cipher_create(session_cipher **cipher,
     return 0;
 }
 
+uint32_t session_cipher_get_version(const session_cipher *cipher) {
+    assert(cipher);
+    return session_builder_get_version(cipher->builder);
+}
+
+void session_cipher_set_version(session_cipher *cipher, uint32_t version) {
+    assert(cipher);
+    session_builder_set_version(cipher->builder, version);
+}
+
 void session_cipher_set_user_data(session_cipher *cipher, void *user_data)
 {
     assert(cipher);
@@ -125,7 +135,7 @@ int session_cipher_encrypt(session_cipher *cipher,
         goto complete;
     }
 
-    result = signal_protocol_session_load_session(cipher->store, &record, cipher->remote_address);
+    result = signal_protocol_session_load_session(cipher->store, &record, cipher->remote_address, session_builder_get_version(cipher->builder));
     if(result < 0) {
         goto complete;
     }
@@ -274,7 +284,7 @@ int session_cipher_decrypt_pre_key_signal_message(session_cipher *cipher,
         goto complete;
     }
 
-    result = signal_protocol_session_load_session(cipher->store, &record, cipher->remote_address);
+    result = signal_protocol_session_load_session(cipher->store, &record, cipher->remote_address, session_builder_get_version(cipher->builder));
     if(result < 0) {
         goto complete;
     }
@@ -348,7 +358,7 @@ int session_cipher_decrypt_signal_message(session_cipher *cipher,
     }
 
     result = signal_protocol_session_load_session(cipher->store, &record,
-            cipher->remote_address);
+            cipher->remote_address, session_builder_get_version(cipher->builder));
     if(result < 0) {
         goto complete;
     }
@@ -732,7 +742,7 @@ int session_cipher_get_remote_registration_id(session_cipher *cipher, uint32_t *
     assert(cipher);
     signal_lock(cipher->global_context);
 
-    result = signal_protocol_session_load_session(cipher->store, &record, cipher->remote_address);
+    result = signal_protocol_session_load_session(cipher->store, &record, cipher->remote_address, session_builder_get_version(cipher->builder));
     if(result < 0) {
         goto complete;
     }
@@ -773,7 +783,7 @@ int session_cipher_get_session_version(session_cipher *cipher, uint32_t *version
         goto complete;
     }
 
-    result = signal_protocol_session_load_session(cipher->store, &record, cipher->remote_address);
+    result = signal_protocol_session_load_session(cipher->store, &record, cipher->remote_address, session_builder_get_version(cipher->builder));
     if(result < 0) {
         goto complete;
     }

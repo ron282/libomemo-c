@@ -128,6 +128,7 @@ typedef struct {
 START_TEST(test_basic_pre_key_v3)
 {
     int result = 0;
+    int version = 3;
 
     /* Create Alice's data store and session builder */
     signal_protocol_store_context *alice_store = 0;
@@ -194,7 +195,7 @@ START_TEST(test_basic_pre_key_v3)
 
     session_record *loaded_record = 0;
     session_state *loaded_record_state = 0;
-    result = signal_protocol_session_load_session(alice_store, &loaded_record, &bob_address);
+    result = signal_protocol_session_load_session(alice_store, &loaded_record, &bob_address, version);
     ck_assert_int_eq(result, 0);
 
     loaded_record_state = session_record_get_state(loaded_record);
@@ -275,7 +276,7 @@ START_TEST(test_basic_pre_key_v3)
     ck_assert_int_eq(signal_protocol_session_contains_session(bob_store, &alice_address), 1);
 
     session_record *alice_recipient_session_record = 0;
-    signal_protocol_session_load_session(bob_store, &alice_recipient_session_record, &alice_address);
+    signal_protocol_session_load_session(bob_store, &alice_recipient_session_record, &alice_address, version);
 
     session_state *alice_recipient_session_state = session_record_get_state(alice_recipient_session_record);
     ck_assert_int_eq(session_state_get_session_version(alice_recipient_session_state), 3);
@@ -1086,6 +1087,7 @@ END_TEST
 START_TEST(test_optional_one_time_pre_key)
 {
     int result = 0;
+    int version = 2;
 
     /* Create Alice's data store and session builder */
     signal_protocol_store_context *alice_store = 0;
@@ -1148,7 +1150,7 @@ START_TEST(test_optional_one_time_pre_key)
     ck_assert_int_eq(result, 1);
 
     session_record *record = 0;
-    result = signal_protocol_session_load_session(alice_store, &record, &bob_address);
+    result = signal_protocol_session_load_session(alice_store, &record, &bob_address, version);
     ck_assert_int_eq(result, 0);
 
     session_state *state = 0;
@@ -1212,7 +1214,7 @@ START_TEST(test_optional_one_time_pre_key)
 
     ck_assert_int_eq(signal_protocol_session_contains_session(bob_store, &alice_address), 1);
 
-    result = signal_protocol_session_load_session(bob_store, &record, &alice_address);
+    result = signal_protocol_session_load_session(bob_store, &record, &alice_address, version);
     ck_assert_int_eq(result, 0);
 
     state = session_record_get_state(record);

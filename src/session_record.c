@@ -57,6 +57,16 @@ int session_record_create(session_record **record, session_state *state, signal_
     return 0;
 }
 
+uint32_t session_record_get_version(const session_record *record) {
+    assert(record);
+    return session_state_get_session_version(record->state);
+}
+
+void session_record_set_version(session_record *record, uint32_t version) {
+    assert(record);
+    session_state_set_session_version(record->state, version);
+}
+
 int session_record_serialize(signal_buffer **buffer, const session_record *record)
 {
     int result = 0;
@@ -372,6 +382,7 @@ int session_record_archive_current_state(session_record *record)
     if(result < 0) {
         goto complete;
     }
+    session_state_set_session_version(new_state, session_record_get_version(record));
 
     result = session_record_promote_state(record, new_state);
 

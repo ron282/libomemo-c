@@ -146,6 +146,9 @@ int session_cipher_get_remote_registration_id(session_cipher *cipher, uint32_t *
  */
 int session_cipher_get_session_version(session_cipher *cipher, uint32_t *version);
 
+uint32_t session_cipher_get_version(const session_cipher *cipher);
+void session_cipher_set_version(session_cipher *cipher, uint32_t version);
+
 void session_cipher_free(session_cipher *cipher);
 
 #ifdef __cplusplus
