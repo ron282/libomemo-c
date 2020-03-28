@@ -18,7 +18,7 @@ set(protobuf_SRCS
 	OMEMO.pb-c.c
 )
 
-set(signal_protocol_SRCS
+set(omemo_SRCS
 	vpool.c
 	vpool.h
 	signal_protocol.c
@@ -65,18 +65,18 @@ set(signal_protocol_SRCS
 add_subdirectory(curve25519)
 add_subdirectory(protobuf-c)
 
-add_library(signal-protocol-c
+add_library(omemo-c
 	${protobuf_SRCS}
-	${signal_protocol_SRCS}
+	${omemo_SRCS}
 	$<TARGET_OBJECTS:curve25519>
 	$<TARGET_OBJECTS:protobuf-c>
 )
 
 if(BUILD_SHARED_LIBS)
-	target_link_libraries(signal-protocol-c ${M_LIB})
-	set_target_properties(signal-protocol-c PROPERTIES
-		VERSION ${SIGNAL_PROTOCOL_C_VERSION}
-		SOVERSION ${SIGNAL_PROTOCOL_C_VERSION_MAJOR}
+	target_link_libraries(omemo-c ${M_LIB})
+	set_target_properties(omemo-c PROPERTIES
+		VERSION ${OMEMO_C_VERSION}
+		SOVERSION ${OMEMO_C_VERSION_MAJOR}
 	)
 endif()
 
@@ -101,16 +101,16 @@ INSTALL(
 	group_cipher.h
 	fingerprint.h
 	device_consistency.h
-	DESTINATION ${INCLUDE_INSTALL_DIR}/signal
+	DESTINATION ${INCLUDE_INSTALL_DIR}/omemo
 )
 
-INSTALL(TARGETS signal-protocol-c
+INSTALL(TARGETS omemo-c
 	LIBRARY DESTINATION ${LIB_INSTALL_DIR}
 	RUNTIME DESTINATION ${BIN_INSTALL_DIR}
 	ARCHIVE DESTINATION ${LIB_INSTALL_DIR}
 )
 
-configure_file( ${CMAKE_CURRENT_SOURCE_DIR}/libsignal-protocol-c.pc.in
-		${CMAKE_CURRENT_BINARY_DIR}/libsignal-protocol-c.pc @ONLY)
+configure_file( ${CMAKE_CURRENT_SOURCE_DIR}/libomemo-c.pc.in
+		${CMAKE_CURRENT_BINARY_DIR}/libomemo-c.pc @ONLY)
 
-INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/libsignal-protocol-c.pc DESTINATION "${INSTALL_PKGCONFIG_DIR}")
+INSTALL(FILES ${CMAKE_CURRENT_BINARY_DIR}/libomemo-c.pc DESTINATION "${INSTALL_PKGCONFIG_DIR}")

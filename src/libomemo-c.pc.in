@@ -5,9 +5,9 @@ sharedlibdir=@LIB_INSTALL_DIR@
 includedir=@INCLUDE_INSTALL_DIR@
 
 Name: @PROJECT_NAME@
-Description: Signal Protocol C Library
+Description: OMEMO C Library
 Version: @SIGNAL_PROTOCOL_C_VERSION@
 
 Requires:
 Libs: -L${libdir} -L${sharedlibdir} -l@PROJECT_NAME@
-Cflags: -I${includedir}/signal
+Cflags: -I${includedir}/omemo
