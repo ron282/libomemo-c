@@ -48,7 +48,7 @@ struct ratchet_kdf_infos {
 };
 
 static const struct ratchet_kdf_infos signal_kdf_infos_data = {"WhisperMessageKeys", "WhisperRatchet", "WhisperText"};
-static const struct ratchet_kdf_infos omemo_kdf_infos_data = {"OMEMO Message Key Material", "OMEMO Root Chain", "OMEMO Payload"};
+static const struct ratchet_kdf_infos omemo_kdf_infos_data = {"OMEMO Message Key Material", "OMEMO Root Chain", "OMEMO X3DH"};
 
 const struct ratchet_kdf_infos* ratchet_kdf_infos_for_session_version(uint32_t version) {
     if (version == 2 || version == 3) return &signal_kdf_infos_data;
