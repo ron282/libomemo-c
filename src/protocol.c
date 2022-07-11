@@ -9,6 +9,7 @@
 #include "OMEMO.pb-c.h"
 
 #define SIGNAL_MESSAGE_MAC_LENGTH 8
+#define OMEMO_MESSAGE_MAC_LENGTH 16
 #define SIGNATURE_LENGTH 64
 
 struct ciphertext_message
@@ -588,7 +589,7 @@ int signal_message_verify_mac(signal_message *message,
     uint8_t *serialized_message_data = 0;
     size_t serialized_message_len = 0;
     uint8_t *their_mac_data = 0;
-    size_t their_mac_len = SIGNAL_MESSAGE_MAC_LENGTH;
+    size_t their_mac_len = 0;
     uint8_t *our_mac_data = 0;
     size_t our_mac_len = 0;
 
@@ -602,6 +603,7 @@ int signal_message_verify_mac(signal_message *message,
         serialized_message_data = serialized_data;
         serialized_message_len = serialized_len - SIGNAL_MESSAGE_MAC_LENGTH;
         their_mac_data = serialized_data + serialized_message_len;
+        their_mac_len = SIGNAL_MESSAGE_MAC_LENGTH;
     } else {
         /* In OMEMO we already decoded the MAC properly */
         their_mac_data = signal_buffer_data(message->mac);
@@ -658,6 +660,7 @@ static int signal_message_get_mac(signal_buffer **buffer,
     signal_buffer *full_mac_buffer = 0;
     signal_buffer *result_buf = 0;
     uint8_t *result_data = 0;
+    size_t mac_length = message_version < 4 ? SIGNAL_MESSAGE_MAC_LENGTH : OMEMO_MESSAGE_MAC_LENGTH;
 
     assert(global_context);
 
@@ -701,19 +704,19 @@ static int signal_message_get_mac(signal_buffer **buffer,
 
     result = signal_hmac_sha256_final(global_context,
             hmac_context, &full_mac_buffer);
-    if(result < 0 || signal_buffer_len(full_mac_buffer) < SIGNAL_MESSAGE_MAC_LENGTH) {
+    if(result < 0 || signal_buffer_len(full_mac_buffer) < mac_length) {
         if(result >= 0) { result = SG_ERR_UNKNOWN; }
         goto complete;
     }
 
-    result_buf = signal_buffer_alloc(SIGNAL_MESSAGE_MAC_LENGTH);
+    result_buf = signal_buffer_alloc(mac_length);
     if(!result_buf) {
         result = SG_ERR_NOMEM;
         goto complete;
     }
 
     result_data = signal_buffer_data(result_buf);
-    memcpy(result_data, signal_buffer_data(full_mac_buffer), SIGNAL_MESSAGE_MAC_LENGTH);
+    memcpy(result_data, signal_buffer_data(full_mac_buffer), mac_length);
 
 complete:
     signal_hmac_sha256_cleanup(global_context, hmac_context);
