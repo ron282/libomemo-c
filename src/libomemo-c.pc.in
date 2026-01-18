@@ -6,8 +6,8 @@ includedir=@INCLUDE_INSTALL_DIR@
 
 Name: @PROJECT_NAME@
 Description: OMEMO C Library
-Version: @SIGNAL_PROTOCOL_C_VERSION@
+Version: @OMEMO_C_VERSION@
 
 Requires:
-Libs: -L${libdir} -L${sharedlibdir} -l@PROJECT_NAME@
+Libs: -L${libdir} -L${sharedlibdir} -l@PROJECT_NAME@ -lprotobuf-c
 Cflags: -I${includedir}/omemo

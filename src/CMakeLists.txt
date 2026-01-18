@@ -1,5 +1,5 @@
-if(BUILD_SHARED_LIBS AND NOT MSVC)
-	find_library(M_LIB m)
+if(BUILD_SHARED_LIBS)
+	find_library(PBC_LIB protobuf-c)
 endif()
 
 include_directories(
@@ -54,19 +54,15 @@ set(omemo_SRCS
 )
 
 add_subdirectory(curve25519)
-add_subdirectory(protobuf-c)
 
 add_library(omemo-c
 	${protobuf_SRCS}
 	${omemo_SRCS}
 	$<TARGET_OBJECTS:curve25519>
-	$<TARGET_OBJECTS:protobuf-c>
 )
 
 if(BUILD_SHARED_LIBS)
-	if(NOT MSVC)
-		target_link_libraries(omemo-c ${M_LIB})
-	endif()
+	target_link_libraries(omemo-c ${PBC_LIB})
 	set_target_properties(omemo-c PROPERTIES
 		VERSION ${OMEMO_C_VERSION}
 		SOVERSION ${OMEMO_C_VERSION_MAJOR}

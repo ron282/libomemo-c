@@ -1,5 +1,6 @@
 enable_testing()
 find_library(M_LIB m)
+find_library(PBC_LIB protobuf-c REQUIRED)
 find_package(Check 0.9.10 REQUIRED)
 IF(NOT(APPLE AND ${CMAKE_SYSTEM_NAME} MATCHES "Darwin"))
   find_package(OpenSSL 1.0 REQUIRED)
@@ -37,12 +38,16 @@ set(LIBS ${LIBS}
 	${CMAKE_THREAD_LIBS_INIT}
 	${CMAKE_DL_LIBS}
 	omemo-c
+	${PBC_LIB}
 )
 
 set(common_SRCS
 	test_common.c
+	test_common_pthread.c
 	test_common.h
 )
+
+message("LIB " ${PBC_LIB})
 
 include_directories(. ../src)
 

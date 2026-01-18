@@ -4,7 +4,6 @@
 #include <check.h>
 
 #include "../src/signal_protocol.h"
-#include "../src/signal_protocol_internal.h"
 #include "curve.h"
 #include "test_common.h"
 
@@ -335,26 +334,27 @@ START_TEST(test_curve25519_large_signatures)
     result = curve_generate_key_pair(global_context, &keys);
     ck_assert_int_eq(result, 0);
 
-    uint8_t message[1048576];
-    memset(message, 0, sizeof(message));
+    const int message_len = 1048576;
+    uint8_t *message = malloc(message_len);
+    memset(message, 0, message_len);
 
     signal_buffer *signature = 0;
 
     result = curve_calculate_signature(global_context, &signature,
-            ec_key_pair_get_private(keys), message, sizeof(message));
+            ec_key_pair_get_private(keys), message, message_len);
     ck_assert_int_eq(result, 0);
 
     uint8_t *data = signal_buffer_data(signature);
     size_t len = signal_buffer_len(signature);
 
     result = curve_verify_signature(ec_key_pair_get_public(keys),
-            message, sizeof(message), data, len);
+            message, message_len, data, len);
     ck_assert_int_eq(result, 1);
 
     data[0] ^= 0x01;
 
     result = curve_verify_signature(ec_key_pair_get_public(keys),
-            message, sizeof(message), data, len);
+            message, message_len, data, len);
     ck_assert_int_eq(result, 0);
 
     /* Cleanup */
@@ -362,6 +362,7 @@ START_TEST(test_curve25519_large_signatures)
     if(signature) {
         signal_buffer_free(signature);
     }
+    free(message);
 }
 END_TEST
 
@@ -382,7 +383,7 @@ START_TEST(test_unique_signatures)
     ck_assert_ptr_ne(message, 0);
 
     for(i = 1; i <= 256; i++) {
-        result = signal_crypto_random(global_context, message, i);
+        result = test_random_generator(message, i, NULL);
         ck_assert_int_eq(result, 0);
 
         result = curve_calculate_vrf_signature(global_context, &signature,
@@ -401,7 +402,7 @@ START_TEST(test_unique_signatures)
 
         signal_buffer_free(vrf_output);
 
-        result = signal_crypto_random(global_context, (uint8_t *)&r, sizeof(size_t));
+        result = test_random_generator((uint8_t *)&r, sizeof(size_t), NULL);
         ck_assert_int_eq(result, 0);
 
         message[r % i] ^= 0x01;
@@ -491,7 +492,7 @@ START_TEST(test_ed25519_verify_from_xed25519_sig)
 
     pubkey_buffer = ec_public_key_get_ed(ec_key_pair_get_public(keys));
 
-    result = curve_decode_point(&pubkey, pubkey_buffer->data, pubkey_buffer->len, global_context);
+    result = curve_decode_point(&pubkey, signal_buffer_data(pubkey_buffer), signal_buffer_len(pubkey_buffer), global_context);
     ck_assert_int_eq(result, 0);
 
     uint8_t message[1000];
@@ -531,7 +532,7 @@ START_TEST(test_curve_to_ed_to_curve)
     ck_assert_int_eq(result, 0);
 
     edpub_buffer = ec_public_key_get_ed(alice_public_key);
-    result = curve_decode_point(&alice_public_key_2, edpub_buffer->data, edpub_buffer->len, global_context);
+    result = curve_decode_point(&alice_public_key_2, signal_buffer_data(edpub_buffer), signal_buffer_len(edpub_buffer), global_context);
     ck_assert_int_eq(result, 0);
 
     montpub_buffer = ec_public_key_get_mont(alice_public_key);
