@@ -1,9 +1,6 @@
-if(BUILD_SHARED_LIBS)
-	find_library(PBC_LIB protobuf-c)
-endif()
-
 include_directories(
 	.
+	protobuf-c
 	curve25519/ed25519/nacl_includes
 	curve25519/ed25519/additions
 	curve25519/ed25519/sha512
@@ -12,6 +9,7 @@ include_directories(
 )
 
 set(protobuf_SRCS
+	protobuf-c/protobuf-c.c
 	LocalStorageProtocol.pb-c.c
 	WhisperTextProtocol.pb-c.c
 	OMEMO.pb-c.c
@@ -62,7 +60,6 @@ add_library(omemo-c
 )
 
 if(BUILD_SHARED_LIBS)
-	target_link_libraries(omemo-c ${PBC_LIB})
 	set_target_properties(omemo-c PROPERTIES
 		VERSION ${OMEMO_C_VERSION}
 		SOVERSION ${OMEMO_C_VERSION_MAJOR}

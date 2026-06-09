@@ -8,7 +8,8 @@ Source0:        omemo.zip
 
 BuildRequires:  gcc-c++
 BuildRequires:  cmake
-BuildRequires:  check
+BuildRequires:  check-devel
+BuildRequires:  openssl-devel
 
 %description
 Lib omemo 
@@ -22,7 +23,6 @@ Provides:		%{name}-devel
 Contains files needed to development with %{name}.
 
 %prep
-%autosetup -p1 -n %{name}-%{version}/%{name}
 
 %build
 mkdir -p build
