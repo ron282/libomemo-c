@@ -1,58 +1,61 @@
 Name:           omemo-c
-Summary:        Lib omemo
+Summary:        Lib omemo-c (OMEMO encryption library)
 Version:        0.5.0
 Release:        1
-License:        Lesser GNU General Public License
-URL:            https://github.com/dino/libomemo-c/archive/refs/heads
-Source0:        omemo.zip
-
+License:        LGPLv2+
+URL:            https://github.com/dino-im/libomemo-c
+Source0:        %{name}-%{version}.tar.gz
 BuildRequires:  gcc-c++
 BuildRequires:  cmake
 BuildRequires:  check-devel
 BuildRequires:  openssl-devel
 
 %description
-Lib omemo 
+libomemo-c is a fork of libsignal-protocol-c used for OMEMO encryption in XMPP clients.
 
 %package devel
-Summary:        Development package of %{name}
-Requires:       %{name} = %{version}
-Provides:		%{name}-devel
+Summary:        Development files for %{name}
+Requires:       %{name} = %{version}-%{release}
+Provides:       %{name}-devel
 
 %description devel
-Contains files needed to development with %{name}.
+Contains headers and development files for %{name}.
 
 %prep
+%setup -q -n libomemo-c-%{version}
 
 %build
 mkdir -p build
 pushd build
 %cmake .. \
--D CMAKE_POSITION_INDEPENDENT_CODE=ON \
--D BUILD_TESTING=ON
-%make_build 
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DBUILD_TESTING=OFF
+%make_build
 popd
 
 %install
 pushd build
-%make_install 
-popd 
+%make_install
+popd
 
-%post   
+%post
 /sbin/ldconfig
 
-%postun 
+%postun
 /sbin/ldconfig
 
-%files 
+%files
 %defattr(-, root, root, -)
-%{_libdir}/libomemo-c.so
 %{_libdir}/libomemo-c.so.*
 
 %files devel
 %doc LICENSE
 %defattr(-, root, root, -)
-%{_includedir}/*/*.h
-%{_libdir}/pkgconfig/lib%{name}.pc
+%{_includedir}/omemo/*.h
+%{_libdir}/pkgconfig/libomemo-c.pc
 %{_libdir}/libomemo-c.so
-%{_libdir}/libomemo-c.so.*
+
+%changelog
+* Tue Jun 23 2026 Ronan <ronan35@gmx.fr> - 0.5.0-1
+- Initial SailfishOS package
+- Vendor protobuf-c runtime, correct spec for sfdk build
