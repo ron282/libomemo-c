@@ -22,7 +22,7 @@ Provides:       %{name}-devel
 Contains headers and development files for %{name}.
 
 %prep
-%setup -q -n libomemo-c-%{version}
+%setup -q -n omemo-c-%{version}
 
 %build
 mkdir -p build
